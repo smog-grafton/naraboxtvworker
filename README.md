@@ -122,7 +122,13 @@ Dedicated Laravel worker for media processing (transcode, probe, sync). Runs on 
      git branch -M main
      git push -u origin main
      ```
-   - Use your GitHub credentials (PAT or SSH). If the repo already has a LICENSE, pull first: `git pull origin main --rebase` then push.
+   - Use your GitHub credentials (PAT or SSH). If the repo already has content (e.g. LICENSE), fetch and merge first:
+     ```bash
+     git fetch origin
+     git pull origin main --allow-unrelated-histories
+     # Resolve any conflicts, then:
+     git push -u origin main
+     ```
 
 2. **Ensure the repo contains**:
    - `Dockerfile` (in project root)
