@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# NaraboxTV File Server Worker - Production Dockerfile
+# ---------------------------------------------------------------------------
+# PHP 8.3 CLI-based image for queue workers + Horizon. FFmpeg installed.
+# Suitable for Coolify Dockerfile deployment.
+
+FROM php:8.3-cli-bookworm AS base
+
+# Install system deps + FFmpeg
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    unzip \
+    libzip-dev \
+    libpng-dev \
+    libonig-dev \
+    libxml2-dev \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# PHP extensions for Laravel
+RUN docker-php-ext-install -j$(nproc) \
+    bcmath \
+    exif \
+    pcntl \
+    zip \
+    pdo_mysql
+
+# Redis extension (for queue)
+RUN pecl install redis && docker-php-ext-enable redis
+
+# Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+ENV COMPOSER_ALLOW_SUPERUSER=1
+
+WORKDIR /app
+
+# App files
+COPY composer.json composer.lock* ./
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
+
+COPY . .
+RUN composer dump-autoload --optimize
+
+# Ensure storage/cache writable
+RUN chown -R www-data:www-data /app/storage /app/bootstrap/cache \
+    && chmod -R 775 /app/storage /app/bootstrap/cache
+
+# Optional: run as www-data
+USER www-data
+
+# Default: run Horizon (override in Coolify to use queue:work if preferred)
+CMD ["php", "artisan", "horizon"]
