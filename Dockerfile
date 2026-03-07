@@ -1,10 +1,11 @@
 # ---------------------------------------------------------------------------
 # NaraboxTV File Server Worker - Production Dockerfile
 # ---------------------------------------------------------------------------
-# PHP 8.3 CLI-based image for queue workers + Horizon. FFmpeg installed.
+# PHP 8.4 CLI-based image for queue workers + Horizon. FFmpeg installed.
+# Matches composer.lock (Symfony 8 / Carbon 3.11 require PHP 8.4).
 # Suitable for Coolify Dockerfile deployment.
 
-FROM php:8.3-cli-bookworm AS base
+FROM php:8.4-cli-bookworm AS base
 
 # Install system deps + FFmpeg
 RUN apt-get update && apt-get install -y --no-install-recommends \
