@@ -117,12 +117,21 @@ php artisan key:generate
 
 ### 2. Environment
 
+- **APP_KEY:** Must be set. Run `php artisan key:generate` after copying `.env.example` to `.env`.
 - **Queue:** `QUEUE_CONNECTION=redis`
 - **Redis:** `REDIS_HOST=127.0.0.1`, `REDIS_PORT=6379` (or your Redis). Use `REDIS_CLIENT=predis` if the PHP Redis extension is not installed.
-- **MySQL:** Set `DB_*` to your local DB (or SQLite for minimal testing).
-- **CDN/Portal (optional for local):** Point `CDN_API_BASE_URL` / `PORTAL_API_BASE_URL` to local URLs (e.g. `http://cdn.naraboxtv.test`, `http://portal.naraboxtv.test`) if you run CDN/Portal locally.
+- **Session (local without Redis):** Set `SESSION_DRIVER=file` so `/` and `/admin` work without a running Redis; use `SESSION_DRIVER=redis` when Redis is running (e.g. for Horizon).
+- **MySQL:** Set `DB_*` to your local DB (e.g. `DB_DATABASE=file-server-worker`, `DB_USERNAME=root`, `DB_PASSWORD=` for XAMPP).
+- **CDN/Portal (optional for local):** Point `CDN_API_BASE_URL` / `PORTAL_API_BASE_URL` to local URLs if you run CDN/Portal locally.
+
+**Local token setup:**
+
+- **PORTAL_API_TOKEN:** Must match the Portal’s `PORTAL_WORKER_API_TOKEN` (in naraboxt-lara `.env`). The worker uses this when calling `POST /api/v1/worker/sync`.
+- **CDN_API_TOKEN:** Used when the worker calls the CDN callback `POST /api/v1/media/worker/callback`. Create a token in the CDN app: `cd naraboxtv-cdn && php artisan cdn:token worker-callback`, then set that value in the worker’s `.env`. You can reuse the same token as telebot if it’s a valid CDN API token.
 
 ### 3. Redis
+
+Horizon (and `/horizon` dashboard APIs like `/horizon/api/stats`, `/horizon/api/masters`, `/horizon/api/workload`) **requires Redis**. Without Redis running, those endpoints return 500. For local dev you can use `SESSION_DRIVER=file` and `CACHE_STORE=file` so the main site and Filament login work without Redis; Horizon will still need Redis.
 
 ```bash
 # Homebrew
@@ -164,6 +173,10 @@ Check Horizon or logs for the healthcheck job.
 ---
 
 ## Coolify deployment
+
+The Dockerfile uses **byjg/php:8.4-cli** (PHP 8.4 with intl, redis, pdo_mysql, etc. pre-installed) so the image builds quickly without compiling PHP extensions. If you previously saw the build fail during `docker-php-ext-install intl`, that was due to timeout or resource limits; the current image avoids that.
+
+If Coolify shows a warning about `APP_ENV=production` at build time, set **APP_ENV** (and other runtime-only vars) as **Runtime only** in the environment variables settings so they are not injected during the build.
 
 ### Prerequisites
 
