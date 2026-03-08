@@ -7,7 +7,7 @@
 
 FROM php:8.4-cli-bookworm AS base
 
-# Install system deps + FFmpeg
+# Install system deps + FFmpeg (libicu-dev required for intl - Filament)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     unzip \
@@ -15,13 +15,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng-dev \
     libonig-dev \
     libxml2-dev \
+    libicu-dev \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# PHP extensions for Laravel
+# PHP extensions for Laravel + Filament (intl required by filament/support)
 RUN docker-php-ext-install -j$(nproc) \
     bcmath \
     exif \
+    intl \
     pcntl \
     zip \
     pdo_mysql
