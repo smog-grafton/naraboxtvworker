@@ -233,7 +233,23 @@ If the proxy shows 502, ensure the app inside the container listens on **port 30
 
 ### 500 Internal Server Error on / or /admin
 
-**.htaccess is not used in Docker** — the container runs `php artisan serve`, which does not read `.htaccess`. The 500 comes from Laravel. The app now serves a minimal home page at `/` (links to Admin, Horizon, health). If you still get 500, the cause is often **session**: `SESSION_DRIVER=redis` fails when Redis is unreachable. Ensure **REDIS_HOST** / **REDIS_PORT** / **REDIS_PASSWORD** use Coolify internal Redis, or set **SESSION_DRIVER=file** temporarily. Set **APP_DEBUG=true** or check **storage/logs/laravel.log** to see the real exception.
+The container has **no `.env` file** (it’s in `.dockerignore`). Coolify injects environment variables at runtime. The **entrypoint** creates `/app/.env` from those variables when it’s missing, so Laravel and `php artisan` see the same config. If you still get 500, check the following.
+
+1. **APP_KEY is required**  
+   In Coolify, set **APP_KEY** to a valid Laravel key. Generate one locally:
+   ```bash
+   cd /path/to/file-server-worker && php artisan key:generate --show
+   ```
+   Paste that value into Coolify’s **APP_KEY** (as a secret or normal env var). If APP_KEY is missing or empty, Laravel returns 500 when starting the session or encrypting cookies.
+
+2. **Redis unreachable (session)**  
+   If **SESSION_DRIVER=redis** and the app cannot reach Redis, every web request that uses the session will 500. Ensure **REDIS_HOST** (and **REDIS_PORT** / **REDIS_PASSWORD**) use Coolify’s **internal** Redis hostname, not `127.0.0.1`. To confirm Redis is the cause, temporarily set **SESSION_DRIVER=file** and **CACHE_STORE=file** in Coolify; if the 500 goes away, fix Redis connectivity and then switch back to `redis`.
+
+3. **See the real error**  
+   Set **APP_DEBUG=true** in Coolify (temporarily), redeploy, and open `/` or `/admin` again. The response will show the exception and message. Fix the cause, then set **APP_DEBUG=false** again.
+
+4. **Artisan in the container**  
+   `php artisan key:generate` fails in the container because there is no `.env` until the entrypoint runs. You don’t need to run it there: set **APP_KEY** in Coolify (as above). After the entrypoint has created `.env`, you can run other commands (e.g. `php artisan migrate --force`) in Coolify’s “Execute command” / terminal.
 
 ---
 
