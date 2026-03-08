@@ -59,7 +59,13 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
-                (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
+                // When DB_SSL_MODE=REQUIRED: enable SSL (SSL_CA non-empty) and skip server cert verify for e.g. Coolify internal MySQL.
+                (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('DB_SSL_MODE') === 'REQUIRED'
+                    ? (env('MYSQL_ATTR_SSL_CA') ?: true)
+                    : env('MYSQL_ATTR_SSL_CA'),
+                ...(env('DB_SSL_MODE') === 'REQUIRED' ? [
+                    (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_VERIFY_SERVER_CERT : \PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT) => false,
+                ] : []),
             ]) : [],
         ],
 

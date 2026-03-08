@@ -182,6 +182,23 @@ In Coolify, open your **Redis** resource. You’ll see:
 
 ---
 
+### Coolify MySQL: Database for the worker
+
+The worker needs a MySQL database for processing requests, attempts, callback logs, and Filament. **Do not use `DB_HOST=127.0.0.1`** — inside the container that is the container itself; there is no MySQL there (Connection refused).
+
+1. **Add a MySQL (or MariaDB) resource** in Coolify: **Projects** → your project → **Add Resource** → **Database** → **MySQL** (or MariaDB).
+2. After it is created, create a **database** (e.g. `worker`) and a **user** with access to it (e.g. username `worker`, password your choice). Many Coolify MySQL setups expose a root or admin user; you can create DB/user via the resource’s UI or a one-off command.
+3. Open the **MySQL resource** and find the **internal** connection details (internal hostname and port). Same idea as Redis: the worker runs on the same Docker network, so it must use the **internal** hostname (e.g. a container name like `abc123xyz`), not `127.0.0.1`.
+4. On the **worker application**, set:
+   - **DB_HOST** = internal hostname of the MySQL service (from the MySQL resource’s internal URL/host).
+   - **DB_PORT** = `3306` (or the internal port shown).
+   - **DB_DATABASE** = `worker` (or the database you created).
+   - **DB_USERNAME** = the user you created (e.g. `worker`).
+   - **DB_PASSWORD** = that user’s password.
+5. **Redeploy** or **Restart** the worker, then run `php artisan migrate --force` (e.g. via Coolify “Execute command” or terminal).
+
+---
+
 ### Connecting the worker to Coolify Redis
 
 Set these **Environment Variables** on the **worker application** in Coolify (not on the Redis resource):
