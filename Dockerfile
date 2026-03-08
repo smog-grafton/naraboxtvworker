@@ -48,8 +48,13 @@ RUN composer dump-autoload --optimize
 RUN chown -R www-data:www-data /app/storage /app/bootstrap/cache \
     && chmod -R 775 /app/storage /app/bootstrap/cache
 
-# Optional: run as www-data
+# Entrypoint: serve web on 3000 (for Coolify proxy) + Horizon
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Port Coolify/Traefik forwards to (loadbalancer.server.port=3000)
+EXPOSE 3000
+
 USER www-data
 
-# Default: run Horizon (override in Coolify to use queue:work if preferred)
-CMD ["php", "artisan", "horizon"]
+# Web (Filament, API) on 0.0.0.0:3000 + Horizon
+CMD ["./docker-entrypoint.sh"]
