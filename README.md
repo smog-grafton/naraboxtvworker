@@ -104,10 +104,9 @@ Dedicated Laravel worker for media processing (transcode, probe, sync). Runs on 
 
 7. **Dispatch test job**
    ```bash
-   php artisan tinker
-   >>> App\Jobs\Transcode\RunFfmpegHealthcheckJob::dispatch();
+   php artisan worker:dispatch-healthcheck
    ```
-   Then check Horizon dashboard at `http://localhost:8000/horizon` (if you run `php artisan serve` in another terminal) or check logs.
+   Then check Horizon at `http://localhost:8000/horizon` (if you run `php artisan serve`) or check logs.
 
 ### Before adding the project to Coolify (push to GitHub first)
 
@@ -234,8 +233,24 @@ This means the worker is still using Redis at `127.0.0.1`. Fix it by:
 3. **Check logs** in Coolify for the worker application. You should see the job run and a log line like `FFmpeg healthcheck job completed` with `ffmpeg` and `ffprobe` results.
 4. **FFmpeg in container**: The Dockerfile installs `ffmpeg`; `php artisan ffmpeg:test` can be run via Coolify “Execute Command” (if available) to confirm FFmpeg is available inside the container.
 
+### Implementation summary (Phase 1 & 2)
+
+- **Worker path:** `/Applications/XAMPP/xamppfiles/htdocs/file-server-worker` (repo: [naraboxtvworker](https://github.com/smog-grafton/naraboxtvworker)).
+- **Migrations:** `processing_requests`, `processing_attempts`, `callback_logs`, `sync_logs` (see `database/migrations/2026_03_08_*`). Run `php artisan migrate` (requires DB credentials).
+- **Models / enums:** `ProcessingRequest`, `ProcessingAttempt`, `CallbackLog`, `SyncLog`; `ProcessingRequestStatus`, `ProcessingStage`.
+- **Config:** `config/media_worker.php` (temp_dir, ffmpeg, queues, cdn, portal, **api_token** from `WORKER_API_TOKEN`).
+- **API (Bearer `WORKER_API_TOKEN`):**
+  - `POST /api/v1/processing/submit` — submit a processing request (source_url, optional cdn_asset_id, cdn_source_id, callback_url, portal_sync_hint).
+  - `GET /api/v1/processing/{externalId}` — status of a request.
+  - `POST /api/v1/processing/{externalId}/retry` — retry failed/cancelled request.
+- **Jobs:** `ProcessMediaPipelineJob` (placeholder pipeline); existing `RunFfmpegHealthcheckJob` and `worker:dispatch-healthcheck` unchanged.
+- **Services (skeleton):** `MediaDownloadService`, `MediaProbeService`, `FfmpegTranscodeService`, `HlsGenerationService`, `CdnApiService`, `PortalApiService` (in `App\Services\Cdn`), `TempFileService`.
+- **Filament admin:** Panel at `/admin`. Resources: **Processing Requests** (list, view, retry; relation managers: Attempts, Callback logs, Sync logs). Widget: **Processing requests stats** on dashboard. Create an admin user: `php artisan make:filament-user`.
+- **Env vars (see .env.example):** All existing (APP_*, DB_*, REDIS_*, CDN_*, PORTAL_*, WORKER_TEMP_DIR, FFMPEG_BIN, FFPROBE_BIN, TRANSCODE_QUEUE, PROBE_QUEUE, SYNC_QUEUE, HORIZON_*). **Added:** `WORKER_API_TOKEN` (Bearer token for CDN/Portal to call worker API).
+- **Integration plan:** See [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md) for findings (worker, CDN, Portal), DB/storage summary, and architecture.
+
 ### Next steps for full transcode pipeline
 
-1. Add jobs that accept a CDN source ID or URL, download the file to `WORKER_TEMP_DIR`, run FFmpeg (faststart, HLS), then upload results to CDN (or shared storage) and notify CDN/Portal via API.
-2. Have the CDN (or Portal) push jobs to Redis or a shared queue so the worker pulls transcode requests.
-3. Add probe job for metadata extraction (ffprobe) and sync job for post-processing notifications.
+1. Implement full pipeline in `ProcessMediaPipelineJob`: download → probe → transcode MP4 → HLS → upload/callback CDN → sync Portal.
+2. Add CDN callback endpoint (or use existing CDN API) so worker can report artifact paths/status.
+3. Optionally have CDN push jobs to worker API (`POST /api/v1/processing/submit`) instead of running optimization on CDN.

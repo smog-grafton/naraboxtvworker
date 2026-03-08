@@ -33,4 +33,11 @@ return [
         'api_token' => env('PORTAL_API_TOKEN', ''),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Worker API (incoming)
+    |--------------------------------------------------------------------------
+    | Token for CDN/Portal to call this worker's API. Bearer token.
+    */
+    'api_token' => env('WORKER_API_TOKEN', ''),
 ];
