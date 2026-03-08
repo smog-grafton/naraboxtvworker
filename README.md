@@ -1,273 +1,280 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# NaraboxTV File Server Worker (Transcoder)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
-
-## About Laravel
-
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
-
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
-
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-## Laravel Sponsors
-
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
-
-### Premium Partners
-
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
-
-## Contributing
-
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Laravel-based media processing worker for the NaraboxTV stack. It runs **transcoding**, **probing**, and **sync** jobs (via Laravel Horizon and Redis), talks to **CDN** (cdn.naraboxtv.com) and **Portal** (portal.naraboxtv.com) over HTTP APIs, and can be deployed on **Coolify** or run locally (e.g. with XAMPP).
 
 ---
 
-## NaraboxTV File Server Worker
+## Table of contents
 
-Dedicated Laravel worker for media processing (transcode, probe, sync). Runs on a separate VPS under Coolify; communicates with CDN and Portal via API.
-
-### Local development (Mac)
-
-1. **Install dependencies**
-   ```bash
-   cd /Applications/XAMPP/xamppfiles/htdocs/file-server-worker
-   composer install
-   ```
-
-2. **Environment**
-   ```bash
-   cp .env.example .env
-   php artisan key:generate
-   ```
-   Set `QUEUE_CONNECTION=redis`, `REDIS_HOST=127.0.0.1` (or your Redis). Use `REDIS_CLIENT=predis` if the redis PHP extension is not installed.
-
-3. **Redis**
-   ```bash
-   # If using Homebrew
-   brew install redis && brew services start redis
-   ```
-
-4. **Migrations (optional)**
-   ```bash
-   php artisan migrate
-   ```
-
-5. **Run Horizon**
-   ```bash
-   php artisan horizon
-   ```
-   Or run the default queue worker: `php artisan queue:work redis --queue=transcode,probe,sync`.
-
-6. **Test FFmpeg**
-   ```bash
-   php artisan ffmpeg:test
-   ```
-   Requires `ffmpeg` and `ffprobe` on PATH (e.g. `brew install ffmpeg`).
-
-7. **Dispatch test job**
-   ```bash
-   php artisan worker:dispatch-healthcheck
-   ```
-   Then check Horizon at `http://localhost:8000/horizon` (if you run `php artisan serve`) or check logs.
-
-### Before adding the project to Coolify (push to GitHub first)
-
-1. **Push this project to GitHub** so Coolify can clone it:
-   - Repo: [https://github.com/smog-grafton/naraboxtvworker](https://github.com/smog-grafton/naraboxtvworker)
-   - From your machine (in the project root):
-     ```bash
-     git init
-     git remote add origin https://github.com/smog-grafton/naraboxtvworker.git
-     git add .
-     git commit -m "Initial worker: Laravel, Horizon, FFmpeg, Dockerfile"
-     git branch -M main
-     git push -u origin main
-     ```
-   - Use your GitHub credentials (PAT or SSH). If the repo already has content (e.g. LICENSE), fetch and merge first:
-     ```bash
-     git fetch origin
-     git pull origin main --allow-unrelated-histories
-     # Resolve any conflicts, then:
-     git push -u origin main
-     ```
-
-2. **Ensure the repo contains**:
-   - `Dockerfile` (in project root)
-   - `.env.example` (Coolify will use this as a template; do not commit `.env`)
-   - `composer.json` / `composer.lock` so the image can run `composer install`
-
-3. **Redis**: Have a Redis instance ready (Coolify Redis service, or external). You will need `REDIS_HOST`, `REDIS_PASSWORD` (if any), and `REDIS_PORT` for the worker.
+- [What this worker does](#what-this-worker-does)
+- [Technologies used](#technologies-used)
+- [Databases and infrastructure](#databases-and-infrastructure)
+- [How it fits with Portal and CDN](#how-it-fits-with-portal-and-cdn)
+- [Local setup (Mac / XAMPP)](#local-setup-mac--xampp)
+- [Coolify deployment](#coolify-deployment)
+- [Worker API (incoming)](#worker-api-incoming)
+- [Environment variables](#environment-variables)
+- [Filament admin](#filament-admin)
+- [Integration summary](#integration-summary)
+- [Further reading](#further-reading)
 
 ---
 
-### Adding the project to Coolify
+## What this worker does
 
-1. In Coolify, go to **Projects** → your project → **Add Resource** → **Application**.
-2. **Source**: Choose **GitHub** (or **Public Repository**), then:
-   - Repository URL: `https://github.com/smog-grafton/naraboxtvworker`
-   - Branch: `main`
-   - (If using GitHub integration, connect the repo and select it.)
-3. **Build Pack**: Choose **Dockerfile**.
-   - Dockerfile location: leave default (root) or set to `./Dockerfile` if prompted.
-4. **General**:
-   - Application name: e.g. `naraboxtv-worker`.
-   - (Optional) Base directory: leave empty if the repo root is the app.
-5. **Environment Variables**: Add from `.env.example`. At minimum set:
-   - `APP_KEY` — generate one: `php artisan key:generate --show` (run locally) and paste.
-   - `APP_ENV=production`
-   - `QUEUE_CONNECTION=redis`
-   - `REDIS_HOST` — Redis service hostname in Coolify (e.g. `redis`) or your Redis server IP.
-   - `REDIS_PASSWORD` — if your Redis has a password.
-   - `REDIS_PORT=6379`
-   - `REDIS_CLIENT=predis` (or `phpredis` if the Docker image has the extension).
-   - Optionally: `CDN_API_BASE_URL`, `CDN_API_TOKEN`, `PORTAL_API_BASE_URL`, ``PORTAL_API_TOKEN`` when you integrate with CDN/Portal.
-6. **Deploy**: Start the deployment. Coolify will build the Dockerfile and run the default command (`php artisan horizon`).
+The **NaraboxTV File Server Worker** (also called “transcoder” or “Laravel worker”) is responsible for:
+
+1. **Processing requests** — Accepts jobs from the CDN (or Portal) to process a media source: download, probe, transcode (e.g. MP4 faststart), generate HLS, then report results back.
+2. **Transcoding** — Uses **FFmpeg** (and **FFprobe**) to optimize video (e.g. faststart) and generate HLS variants. Jobs run on the `transcode` queue with long timeouts (e.g. 7200s).
+3. **Probing** — Media inspection (duration, codecs, resolution) on the `probe` queue.
+4. **Sync** — After processing, the worker can notify the **Portal** so it can refresh derived video sources (e.g. mp4_play, hls_master) for playback. Sync jobs use the `sync` queue.
+5. **Callbacks** — When processing finishes, the worker calls the **CDN** (`POST /api/v1/media/worker/callback`) to report success or failure and update the source’s `optimize_status`, `optimized_path`, `hls_master_path`, etc.
+
+**Current pipeline (Phase 1/2):** The main job `ProcessMediaPipelineJob` creates a `ProcessingRequest`, advances status (e.g. Downloading → Downloaded), and logs; the full chain (download → probe → transcode → HLS → upload → callback → sync) is partially implemented with placeholders. The API, Filament UI, and CDN/Portal integration points are in place.
 
 ---
 
-### Coolify Redis: Where to find connection details
+## Technologies used
 
-In Coolify, open your **Redis** resource. You’ll see:
-
-- **Redis URL (internal)** — use this for apps (like the worker) that run **inside** Coolify (same network).  
-  Example format:  
-  `rediss://default:PASSWORD@CONTAINER_NAME:6380/0`  
-  - **CONTAINER_NAME** = internal hostname (e.g. `ugow8kk0g8cog0ck4kg0c000`).  
-  - **6380** = internal port (Coolify often uses 6380 for TLS; 6379 may be the public port).  
-  - **PASSWORD** = the Redis password.
-
-- **General** tab: **Username** (often `default`), **Password** — copy the password from here for `REDIS_PASSWORD`.
-
-- **Public Port** (e.g. 6379) is for external access; the worker should use the **internal** host and port from the internal URL.
-
-**Do not use `127.0.0.1`** for the worker; the worker container has no Redis on localhost.
+| Technology | Role |
+|------------|------|
+| **Laravel 12** | App framework, HTTP API, queues, Horizon, Filament. |
+| **PHP 8.4** | Runtime (CLI in Docker; optional `php artisan serve` for web/Filament). |
+| **Laravel Horizon** | Redis queue supervisor: separate processes for `transcode`, `probe`, `sync` with configurable timeouts and concurrency. |
+| **Redis** | Queue driver (`QUEUE_CONNECTION=redis`), cache, and Horizon state. |
+| **MySQL** | Processing requests, attempts, callback logs, sync logs, Filament/admin data. |
+| **FFmpeg / FFprobe** | Transcoding and media probing (installed in Docker; required on PATH for local). |
+| **Filament 3** | Admin panel at `/admin`: Processing Requests, Attempts, Callback Logs, Sync Logs, stats widget. |
+| **Docker** | Production image: PHP 8.4 CLI, Composer, Redis extension, FFmpeg; entrypoint runs web server on port 3000 + Horizon. |
 
 ---
 
-### Coolify MySQL: Database for the worker
+## Databases and infrastructure
 
-The worker needs a MySQL database for processing requests, attempts, callback logs, and Filament. **Do not use `DB_HOST=127.0.0.1`** — inside the container that is the container itself; there is no MySQL there (Connection refused).
+### MySQL
 
-1. **Add a MySQL (or MariaDB) resource** in Coolify: **Projects** → your project → **Add Resource** → **Database** → **MySQL** (or MariaDB).
-2. After it is created, create a **database** (e.g. `worker`) and a **user** with access to it (e.g. username `worker`, password your choice). Many Coolify MySQL setups expose a root or admin user; you can create DB/user via the resource’s UI or a one-off command.
-3. Open the **MySQL resource** and find the **internal** connection details (internal hostname and port). Same idea as Redis: the worker runs on the same Docker network, so it must use the **internal** hostname (e.g. a container name like `abc123xyz`), not `127.0.0.1`.
-4. On the **worker application**, set:
-   - **DB_HOST** = internal hostname of the MySQL service (from the MySQL resource’s internal URL/host).
-   - **DB_PORT** = `3306` (or the internal port shown).
-   - **DB_DATABASE** = `worker` (or the database you created).
-   - **DB_USERNAME** = the user you created (e.g. `worker`).
-   - **DB_PASSWORD** = that user’s password.
-5. **Redeploy** or **Restart** the worker, then run `php artisan migrate --force` (e.g. via Coolify “Execute command” or terminal).
+- **Role:** Persist processing lifecycle and admin data.
+- **Tables (worker DB):**
+  - `processing_requests` — Each job from CDN/Portal (external_id, cdn_asset_id, cdn_source_id, source_url, status, failure_reason, payload, artifact_paths, callback_url, portal_sync_hint, timestamps).
+  - `processing_attempts` — Per-request attempt history (for retries and debugging).
+  - `callback_logs` — Log of outbound callback requests to the CDN.
+  - `sync_logs` — Log of sync requests to the Portal.
+  - Laravel defaults: `users`, `cache`, `jobs`, etc. (migrations in `database/migrations/`).
+- **Config:** `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`. For Coolify MySQL with `require_secure_transport=ON`, set `DB_SSL_MODE=REQUIRED` (see `config/database.php`).
 
----
+### Redis
 
-### Connecting the worker to Coolify Redis
+- **Role:** Queue backend for Horizon; optional cache/session store.
+- **Queues:** `transcode` (heavy, long timeout), `probe`, `sync` (see `config/horizon.php` and `config/media_worker.php`).
+- **Config:** `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_CLIENT` (e.g. `phpredis` or `predis`). In Coolify, use the **internal** Redis host/port, not `127.0.0.1`.
 
-Set these **Environment Variables** on the **worker application** in Coolify (not on the Redis resource):
+### Horizon
 
-| Variable | Where to get it | Example |
-|----------|-----------------|---------|
-| **REDIS_HOST** | Hostname from **Redis URL (internal)** (the part between `@` and `:`) | `ugow8kk0g8cog0ck4kg0c000` |
-| **REDIS_PORT** | Port from **Redis URL (internal)** (after the hostname, before `/`) | `6380` |
-| **REDIS_PASSWORD** | **General** → **Password** in the Redis resource | (paste the value) |
-| **REDIS_CLIENT** | Use `phpredis` (Docker image has the extension) | `phpredis` |
-
-Optional: if you prefer a single URL, set **REDIS_URL** to the full **Redis URL (internal)** (e.g. `rediss://default:YOUR_PASSWORD@ugow8kk0g8cog0ck4kg0c000:6380/0`). Laravel will use it for the default Redis connection. If you set `REDIS_URL`, you can omit `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` for that connection. The `rediss://` scheme is Redis over TLS (Coolify’s internal URL often uses this).
-
-After saving env vars, **Redeploy** or **Restart** the worker so it picks up the new values.
+- **Role:** Runs queue workers for `transcode`, `probe`, and `sync` with separate supervisors (process count, timeout, memory per queue).
+- **Dashboard:** When the web server is running (e.g. `https://worker.naraboxtv.com`), Horizon UI is at `/horizon` (same auth as Laravel).
+- **Config:** `config/horizon.php`; env vars `HORIZON_PREFIX`, `HORIZON_TRANSCODE_PROCESSES`, `HORIZON_TRANSCODE_TIMEOUT`, `HORIZON_PROBE_PROCESSES`, `HORIZON_SYNC_PROCESSES`, etc.
 
 ---
 
-### Fix: "Connection refused [tcp://127.0.0.1:6379]" and (8x restarts)
+## How it fits with Portal and CDN
 
-This means the worker is still using Redis at `127.0.0.1`. Fix it by:
+### Local paths (for reference)
 
-1. Setting **REDIS_HOST** to the **internal** Redis hostname (the container name from **Redis URL (internal)**), e.g. `ugow8kk0g8cog0ck4kg0c000`.
-2. Setting **REDIS_PORT** to the port from the internal URL (e.g. **6380**, not the public 6379).
-3. Setting **REDIS_PASSWORD** to the password from the Redis resource **General** tab.
-4. Redeploying or restarting the worker.
+- **Worker:** `/Applications/XAMPP/xamppfiles/htdocs/file-server-worker`
+- **Portal (Laravel):** `/Applications/XAMPP/xamppfiles/htdocs/naraboxt-lara` → represents **portal.naraboxtv.com**
+- **CDN (Laravel):** `/Applications/XAMPP/xamppfiles/htdocs/naraboxtv-cdn` → represents **cdn.naraboxtv.com**
+
+### Flow (high level)
+
+1. **CDN** has a media source ready (e.g. after import). It can either:
+   - Run optimization locally (existing `optimization` queue), or
+   - Send the job to the **worker** by calling `POST {WORKER_URL}/api/v1/processing/submit` with Bearer `WORKER_API_TOKEN`, passing `cdn_asset_id`, `cdn_source_id`, `source_url`, and optional `payload` / `callback_url` / `portal_sync_hint`.
+2. **Worker** creates a `ProcessingRequest`, dispatches `ProcessMediaPipelineJob` to the `transcode` queue. When the pipeline completes (or fails), it calls the **CDN** at `POST {CDN_URL}/api/v1/media/worker/callback` with `asset_id`, `source_id`, `status` (completed/failed), and optional paths/qualities.
+3. **Worker** may call the **Portal** at `POST {PORTAL_URL}/api/v1/worker/sync` with `cdn_asset_id`, `cdn_source_id`, and optional `hint` so the Portal can refresh derived VideoSources for playback. The Portal expects Bearer `PORTAL_WORKER_API_TOKEN` (same value as the worker’s `PORTAL_API_TOKEN`).
+
+### Portal (naraboxt-lara) ↔ Worker
+
+- **Portal exposes:** `POST /api/v1/worker/sync` (Bearer token). Worker calls this after processing so Portal can run `VideoSourceDerivationService::ensureDerivedSourcesForCdnUrl()` for the given CDN asset/source.
+- **Portal env:** `PORTAL_WORKER_API_TOKEN` — same secret as the worker’s `PORTAL_API_TOKEN` (used by the worker when calling the Portal).
+
+### CDN (naraboxtv-cdn) ↔ Worker
+
+- **CDN calls worker:** `POST {worker}/api/v1/processing/submit` with Bearer `WORKER_API_TOKEN` (from CDN env: `CDN_LARAVEL_WORKER_API_URL`, `CDN_LARAVEL_WORKER_API_TOKEN`). Enable with `CDN_LARAVEL_WORKER_ENABLED=true`.
+- **Worker calls CDN:** `POST {CDN}/api/v1/media/worker/callback` with Bearer `CDN_API_TOKEN`. Payload: `asset_id`, `source_id`, `status`, optional `optimized_path`, `hls_master_path`, `qualities_json`, `is_faststart`, `playback_type`, `failure_reason`.
 
 ---
 
-### After the project has been imported and deployed
+## Local setup (Mac / XAMPP)
 
-1. **Check build logs** in Coolify for the application. The build should:
-   - Run `composer install --no-dev`
-   - Finish without errors.
-2. **Check runtime**:
-   - Container should be running and the main process should be `php artisan horizon` (or the command you set).
-   - In Coolify, open the application **Logs** tab to see Horizon/worker output.
-3. **Verify Redis**: If jobs are not processing, confirm the worker can reach Redis (same Docker network as Redis, or correct `REDIS_HOST`/port/password).
+### 1. Clone and install
+
+```bash
+cd /Applications/XAMPP/xamppfiles/htdocs/file-server-worker
+composer install
+cp .env.example .env
+php artisan key:generate
+```
+
+### 2. Environment
+
+- **Queue:** `QUEUE_CONNECTION=redis`
+- **Redis:** `REDIS_HOST=127.0.0.1`, `REDIS_PORT=6379` (or your Redis). Use `REDIS_CLIENT=predis` if the PHP Redis extension is not installed.
+- **MySQL:** Set `DB_*` to your local DB (or SQLite for minimal testing).
+- **CDN/Portal (optional for local):** Point `CDN_API_BASE_URL` / `PORTAL_API_BASE_URL` to local URLs (e.g. `http://cdn.naraboxtv.test`, `http://portal.naraboxtv.test`) if you run CDN/Portal locally.
+
+### 3. Redis
+
+```bash
+# Homebrew
+brew install redis && brew services start redis
+```
+
+### 4. Database
+
+```bash
+php artisan migrate
+```
+
+### 5. Filament admin user (optional)
+
+```bash
+php artisan make:filament-user
+```
+
+### 6. Run the app
+
+- **Web (Filament + Horizon UI):** From project root, either:
+  - Use Apache (XAMPP) with document root pointing to `public/`, or use the root `.htaccess` that rewrites to `public/` (so `http://worker.naraboxtv.test` or similar serves the app).
+  - Or: `php artisan serve` (e.g. `http://localhost:8000`). Then open `/admin` and `/horizon`.
+- **Queue worker:** In a separate terminal run Horizon:
+  ```bash
+  php artisan horizon
+  ```
+  Or a single queue: `php artisan queue:work redis --queue=transcode,probe,sync`.
+
+### 7. Test FFmpeg and a job
+
+```bash
+php artisan ffmpeg:test
+php artisan worker:dispatch-healthcheck
+```
+
+Check Horizon or logs for the healthcheck job.
 
 ---
 
-### Testing the worker on Coolify
+## Coolify deployment
 
-1. **Horizon dashboard** (optional): If you expose a port and run `php artisan serve` in the same container, you can view Horizon at `/horizon`. For a worker-only deployment you usually do not expose HTTP; use logs instead.
-2. **Dispatch a test job** (Coolify Terminal or SSH)
-   ```bash
-   php artisan worker:dispatch-healthcheck
-   ```
-   (No tinker—avoids psysh "not allowed" in containers.)
-3. **Check logs** in Coolify for the worker application. You should see the job run and a log line like `FFmpeg healthcheck job completed` with `ffmpeg` and `ffprobe` results.
-4. **FFmpeg in container**: The Dockerfile installs `ffmpeg`; `php artisan ffmpeg:test` can be run via Coolify “Execute Command” (if available) to confirm FFmpeg is available inside the container.
+### Prerequisites
 
-### Implementation summary (Phase 1 & 2)
+- Repo on GitHub: [https://github.com/smog-grafton/naraboxtvworker](https://github.com/smog-grafton/naraboxtvworker)
+- Coolify project with **MySQL** and **Redis** (or external). Use **internal** hostnames/ports for the worker container.
 
-- **Worker path:** `/Applications/XAMPP/xamppfiles/htdocs/file-server-worker` (repo: [naraboxtvworker](https://github.com/smog-grafton/naraboxtvworker)).
-- **Migrations:** `processing_requests`, `processing_attempts`, `callback_logs`, `sync_logs` (see `database/migrations/2026_03_08_*`). Run `php artisan migrate` (requires DB credentials).
-- **Models / enums:** `ProcessingRequest`, `ProcessingAttempt`, `CallbackLog`, `SyncLog`; `ProcessingRequestStatus`, `ProcessingStage`.
-- **Config:** `config/media_worker.php` (temp_dir, ffmpeg, queues, cdn, portal, **api_token** from `WORKER_API_TOKEN`).
-- **API (Bearer `WORKER_API_TOKEN`):**
-  - `POST /api/v1/processing/submit` — submit a processing request (source_url, optional cdn_asset_id, cdn_source_id, callback_url, portal_sync_hint).
-  - `GET /api/v1/processing/{externalId}` — status of a request.
-  - `POST /api/v1/processing/{externalId}/retry` — retry failed/cancelled request.
-- **Jobs:** `ProcessMediaPipelineJob` (placeholder pipeline); existing `RunFfmpegHealthcheckJob` and `worker:dispatch-healthcheck` unchanged.
-- **Services (skeleton):** `MediaDownloadService`, `MediaProbeService`, `FfmpegTranscodeService`, `HlsGenerationService`, `CdnApiService`, `PortalApiService` (in `App\Services\Cdn`), `TempFileService`.
-- **Filament admin:** Panel at `/admin`. Resources: **Processing Requests** (list, view, retry; relation managers: Attempts, Callback logs, Sync logs). Widget: **Processing requests stats** on dashboard. Create an admin user: `php artisan make:filament-user`.
-- **Env vars (see .env.example):** All existing (APP_*, DB_*, REDIS_*, CDN_*, PORTAL_*, WORKER_TEMP_DIR, FFMPEG_BIN, FFPROBE_BIN, TRANSCODE_QUEUE, PROBE_QUEUE, SYNC_QUEUE, HORIZON_*). **Added:** `WORKER_API_TOKEN` (Bearer token for CDN/Portal to call worker API).
-- **Integration plan:** See [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md) for findings (worker, CDN, Portal), DB/storage summary, and architecture.
+### Add the application in Coolify
 
-### Next steps for full transcode pipeline
+1. **Projects** → your project → **Add Resource** → **Application**.
+2. **Source:** GitHub (or public repo), branch `main`.
+3. **Build pack:** Dockerfile (root `Dockerfile`).
+4. **Port:** The container exposes **3000**. In Coolify, set **Port Exposes** (or equivalent) to **3000** so the proxy (Traefik/Caddy) routes HTTP to the container. The Dockerfile runs `docker-entrypoint.sh`: `php artisan serve --host=0.0.0.0 --port=3000` plus `php artisan horizon`.
+5. **Domains:** Add the Coolify-generated domain (e.g. `http://xxx.157.173.104.218.sslip.io`) first; after it works, add `https://worker.naraboxtv.com` (and set DNS A record for `worker.naraboxtv.com` to the server IP).
 
-1. Implement full pipeline in `ProcessMediaPipelineJob`: download → probe → transcode MP4 → HLS → upload/callback CDN → sync Portal.
-2. Add CDN callback endpoint (or use existing CDN API) so worker can report artifact paths/status.
-3. Optionally have CDN push jobs to worker API (`POST /api/v1/processing/submit`) instead of running optimization on CDN.
+### Environment variables (Coolify)
+
+Set at least:
+
+| Variable | Description |
+|----------|-------------|
+| `APP_KEY` | From `php artisan key:generate --show` |
+| `APP_ENV` | `production` |
+| `APP_URL` | `https://worker.naraboxtv.com` (or your domain) |
+| `DB_CONNECTION` | `mysql` |
+| `DB_HOST` | **Internal** MySQL hostname (from Coolify MySQL “MySQL URL (internal)” — the host between `@` and `:3306`), **not** `127.0.0.1` |
+| `DB_PORT` | `3306` |
+| `DB_DATABASE` | Database name (e.g. `default` or `worker`) |
+| `DB_USERNAME` / `DB_PASSWORD` | From Coolify MySQL |
+| `DB_SSL_MODE` | `REQUIRED` if MySQL uses `require_secure_transport=ON` |
+| `QUEUE_CONNECTION` | `redis` |
+| `REDIS_HOST` | **Internal** Redis hostname (from Coolify Redis “Redis URL (internal)”), **not** `127.0.0.1` |
+| `REDIS_PORT` | From internal URL (e.g. `6379` or `6380`) |
+| `REDIS_PASSWORD` | If set |
+| `REDIS_CLIENT` | `phpredis` (or `predis`) |
+| `CDN_API_BASE_URL` | `https://cdn.naraboxtv.com` (or your CDN URL) |
+| `CDN_API_TOKEN` | Bearer token for worker → CDN callback |
+| `PORTAL_API_BASE_URL` | `https://portal.naraboxtv.com` (or your Portal URL) |
+| `PORTAL_API_TOKEN` | Bearer token for worker → Portal sync (same value as Portal’s `PORTAL_WORKER_API_TOKEN`) |
+| `WORKER_API_TOKEN` | Bearer token for CDN/Portal → worker API (submit, status, retry) |
+
+Optional: `WORKER_TEMP_DIR`, `FFMPEG_BIN`, `FFPROBE_BIN`, `TRANSCODE_QUEUE`, `PROBE_QUEUE`, `SYNC_QUEUE`, `HORIZON_*` (see `.env.example`).
+
+### After deploy
+
+- Run migrations (Coolify “Execute command” or one-off container): `php artisan migrate --force`
+- Create Filament user if needed: `php artisan make:filament-user`
+- Verify: open the app domain → `/admin` and `/horizon`; dispatch a test job and check logs.
+
+### Bad Gateway (502)
+
+If the proxy shows 502, ensure the app inside the container listens on **port 3000** and on **0.0.0.0** (the Dockerfile and `docker-entrypoint.sh` do this). Ensure Coolify “Port Exposes” (or proxy config) is **3000**.
+
+---
+
+### 500 Internal Server Error on / or /admin
+
+**.htaccess is not used in Docker** — the container runs `php artisan serve`, which does not read `.htaccess`. The 500 comes from Laravel. The app now serves a minimal home page at `/` (links to Admin, Horizon, health). If you still get 500, the cause is often **session**: `SESSION_DRIVER=redis` fails when Redis is unreachable. Ensure **REDIS_HOST** / **REDIS_PORT** / **REDIS_PASSWORD** use Coolify internal Redis, or set **SESSION_DRIVER=file** temporarily. Set **APP_DEBUG=true** or check **storage/logs/laravel.log** to see the real exception.
+
+---
+
+## Worker API (incoming)
+
+All routes are under `/api/v1`, protected by middleware that validates `Authorization: Bearer {WORKER_API_TOKEN}`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/processing/submit` | Submit a processing request. Body: `source_url` (required), `cdn_asset_id`, `cdn_source_id`, `original_filename`, `callback_url`, `portal_sync_hint`, `payload`. Returns `202` with `external_id`, `status`, `received_at`. |
+| `GET` | `/api/v1/processing/{externalId}` | Status of a request (UUID). Returns status, timestamps, attempt/callback/sync counts. |
+| `POST` | `/api/v1/processing/{externalId}/retry` | Retry a failed or cancelled request (dispatches a new pipeline job). |
+
+---
+
+## Environment variables
+
+See `.env.example`. Summary:
+
+- **App:** `APP_NAME`, `APP_ENV`, `APP_KEY`, `APP_DEBUG`, `APP_URL`
+- **DB:** `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_SSL_MODE` (optional, use `REQUIRED` for Coolify MySQL with SSL)
+- **Redis:** `REDIS_CLIENT`, `REDIS_HOST`, `REDIS_PASSWORD`, `REDIS_PORT`
+- **CDN (outbound):** `CDN_API_BASE_URL`, `CDN_API_TOKEN`
+- **Portal (outbound):** `PORTAL_API_BASE_URL`, `PORTAL_API_TOKEN`
+- **Worker API (inbound):** `WORKER_API_TOKEN`
+- **Media:** `WORKER_TEMP_DIR`, `FFMPEG_BIN`, `FFPROBE_BIN`, `TRANSCODE_QUEUE`, `PROBE_QUEUE`, `SYNC_QUEUE`
+- **Horizon:** `HORIZON_PREFIX`, `HORIZON_TRANSCODE_PROCESSES`, `HORIZON_TRANSCODE_TIMEOUT`, `HORIZON_PROBE_PROCESSES`, `HORIZON_SYNC_PROCESSES`, etc.
+
+---
+
+## Filament admin
+
+- **URL:** `{APP_URL}/admin` (e.g. `https://worker.naraboxtv.com/admin`).
+- **Create user:** `php artisan make:filament-user`.
+- **Resources:** Processing Requests (list, view, retry); relation managers for Attempts, Callback Logs, Sync Logs.
+- **Widget:** Processing requests stats on the dashboard.
+
+---
+
+## Integration summary
+
+| From | To | Action |
+|------|----|--------|
+| CDN | Worker | `POST /api/v1/processing/submit` (Bearer `WORKER_API_TOKEN`) |
+| Worker | CDN | `POST /api/v1/media/worker/callback` (Bearer `CDN_API_TOKEN`) |
+| Worker | Portal | `POST /api/v1/worker/sync` (Bearer `PORTAL_API_TOKEN` = Portal’s `PORTAL_WORKER_API_TOKEN`) |
+
+**Config files:** `config/media_worker.php` (queues, CDN/Portal URLs and tokens, API token). Integration details: `docs/INTEGRATION_PLAN.md`.
+
+---
+
+## Further reading
+
+- [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md) — Worker, CDN, Portal architecture and phases.
+- [Laravel Horizon](https://laravel.com/docs/horizon)
+- [Filament](https://filamentphp.com/docs)
+- [Coolify](https://coolify.io/docs) — Deployment and proxy (Traefik/Caddy).
