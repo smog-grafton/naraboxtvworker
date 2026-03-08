@@ -159,8 +159,55 @@ Dedicated Laravel worker for media processing (transcode, probe, sync). Runs on 
    - `REDIS_PASSWORD` — if your Redis has a password.
    - `REDIS_PORT=6379`
    - `REDIS_CLIENT=predis` (or `phpredis` if the Docker image has the extension).
-   - Optionally: `CDN_API_BASE_URL`, `CDN_API_TOKEN`, `PORTAL_API_BASE_URL`, `PORTAL_API_TOKEN` when you integrate with CDN/Portal.
+   - Optionally: `CDN_API_BASE_URL`, `CDN_API_TOKEN`, `PORTAL_API_BASE_URL`, ``PORTAL_API_TOKEN`` when you integrate with CDN/Portal.
 6. **Deploy**: Start the deployment. Coolify will build the Dockerfile and run the default command (`php artisan horizon`).
+
+---
+
+### Coolify Redis: Where to find connection details
+
+In Coolify, open your **Redis** resource. You’ll see:
+
+- **Redis URL (internal)** — use this for apps (like the worker) that run **inside** Coolify (same network).  
+  Example format:  
+  `rediss://default:PASSWORD@CONTAINER_NAME:6380/0`  
+  - **CONTAINER_NAME** = internal hostname (e.g. `ugow8kk0g8cog0ck4kg0c000`).  
+  - **6380** = internal port (Coolify often uses 6380 for TLS; 6379 may be the public port).  
+  - **PASSWORD** = the Redis password.
+
+- **General** tab: **Username** (often `default`), **Password** — copy the password from here for `REDIS_PASSWORD`.
+
+- **Public Port** (e.g. 6379) is for external access; the worker should use the **internal** host and port from the internal URL.
+
+**Do not use `127.0.0.1`** for the worker; the worker container has no Redis on localhost.
+
+---
+
+### Connecting the worker to Coolify Redis
+
+Set these **Environment Variables** on the **worker application** in Coolify (not on the Redis resource):
+
+| Variable | Where to get it | Example |
+|----------|-----------------|---------|
+| **REDIS_HOST** | Hostname from **Redis URL (internal)** (the part between `@` and `:`) | `ugow8kk0g8cog0ck4kg0c000` |
+| **REDIS_PORT** | Port from **Redis URL (internal)** (after the hostname, before `/`) | `6380` |
+| **REDIS_PASSWORD** | **General** → **Password** in the Redis resource | (paste the value) |
+| **REDIS_CLIENT** | Use `phpredis` (Docker image has the extension) | `phpredis` |
+
+Optional: if you prefer a single URL, set **REDIS_URL** to the full **Redis URL (internal)** (e.g. `rediss://default:YOUR_PASSWORD@ugow8kk0g8cog0ck4kg0c000:6380/0`). Laravel will use it for the default Redis connection. If you set `REDIS_URL`, you can omit `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` for that connection. The `rediss://` scheme is Redis over TLS (Coolify’s internal URL often uses this).
+
+After saving env vars, **Redeploy** or **Restart** the worker so it picks up the new values.
+
+---
+
+### Fix: "Connection refused [tcp://127.0.0.1:6379]" and (8x restarts)
+
+This means the worker is still using Redis at `127.0.0.1`. Fix it by:
+
+1. Setting **REDIS_HOST** to the **internal** Redis hostname (the container name from **Redis URL (internal)**), e.g. `ugow8kk0g8cog0ck4kg0c000`.
+2. Setting **REDIS_PORT** to the port from the internal URL (e.g. **6380**, not the public 6379).
+3. Setting **REDIS_PASSWORD** to the password from the Redis resource **General** tab.
+4. Redeploying or restarting the worker.
 
 ---
 
@@ -179,14 +226,11 @@ Dedicated Laravel worker for media processing (transcode, probe, sync). Runs on 
 ### Testing the worker on Coolify
 
 1. **Horizon dashboard** (optional): If you expose a port and run `php artisan serve` in the same container, you can view Horizon at `/horizon`. For a worker-only deployment you usually do not expose HTTP; use logs instead.
-2. **Dispatch a test job from your local machine** (or from the CDN/Portal when integrated):
-   - Use tinker on the **server** (e.g. via Coolify “Execute Command” or SSH):
-     ```bash
-     php artisan tinker
-     >>> \App\Jobs\Transcode\RunFfmpegHealthcheckJob::dispatch();
-     >>> exit
-     ```
-   - Or trigger the job via an API/queue from another app that pushes to the same Redis queue.
+2. **Dispatch a test job** (Coolify Terminal or SSH)
+   ```bash
+   php artisan worker:dispatch-healthcheck
+   ```
+   (No tinker—avoids psysh "not allowed" in containers.)
 3. **Check logs** in Coolify for the worker application. You should see the job run and a log line like `FFmpeg healthcheck job completed` with `ffmpeg` and `ffprobe` results.
 4. **FFmpeg in container**: The Dockerfile installs `ffmpeg`; `php artisan ffmpeg:test` can be run via Coolify “Execute Command” (if available) to confirm FFmpeg is available inside the container.
 
