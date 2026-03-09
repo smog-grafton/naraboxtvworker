@@ -99,6 +99,81 @@ class ProcessingRequestResource extends Resource
                         \Filament\Notifications\Notification::make()->title('Retry dispatched')->success()->send();
                     }),
             ])
+            ->headerActions([
+                \Filament\Tables\Actions\Action::make('create_manual_request')
+                    ->label('New manual request')
+                    ->icon('heroicon-o-plus')
+                    ->form([
+                        \Filament\Forms\Components\TextInput::make('source_url')
+                            ->label('Source URL')
+                            ->required()
+                            ->url()
+                            ->maxLength(2048),
+                        \Filament\Forms\Components\TextInput::make('original_filename')
+                            ->label('Original filename')
+                            ->maxLength(512),
+                    ])
+                    ->action(function (array $data): void {
+                        $request = ProcessingRequest::create([
+                            'cdn_asset_id' => null,
+                            'cdn_source_id' => null,
+                            'source_url' => $data['source_url'],
+                            'original_filename' => $data['original_filename'] ?? null,
+                            'status' => ProcessingRequestStatus::Received,
+                            'payload' => null,
+                            'artifact_paths' => [],
+                        ]);
+                        ProcessMediaPipelineJob::dispatch($request);
+                        \Filament\Notifications\Notification::make()
+                            ->title('Manual request queued')
+                            ->success()
+                            ->send();
+                    }),
+                \Filament\Tables\Actions\Action::make('cleanup_artifact')
+                    ->label('Cleanup artifact')
+                    ->icon('heroicon-o-trash')
+                    ->requiresConfirmation()
+                    ->visible(fn (ProcessingRequest $record): bool => $record->hlsArtifact !== null)
+                    ->action(function (ProcessingRequest $record): void {
+                        $artifact = $record->hlsArtifact;
+                        if (! $artifact) {
+                            return;
+                        }
+                        if (is_string($artifact->zip_path) && is_file($artifact->zip_path)) {
+                            @unlink($artifact->zip_path);
+                        }
+                        if (is_string($artifact->hls_dir) && is_dir($artifact->hls_dir)) {
+                            $deleteDir = function (string $path) use (&$deleteDir): void {
+                                $items = @scandir($path);
+                                if (! is_array($items)) {
+                                    return;
+                                }
+                                foreach ($items as $name) {
+                                    if ($name === '.' || $name === '..') {
+                                        continue;
+                                    }
+                                    $full = $path . '/' . $name;
+                                    if (is_dir($full)) {
+                                        $deleteDir($full);
+                                    } else {
+                                        @unlink($full);
+                                    }
+                                }
+                                @rmdir($path);
+                            };
+                            $deleteDir($artifact->hls_dir);
+                        }
+                        $artifact->update([
+                            'status' => 'expired',
+                            'download_token' => null,
+                            'download_expires_at' => now(),
+                        ]);
+                        \Filament\Notifications\Notification::make()
+                            ->title('Artifact cleaned up')
+                            ->success()
+                            ->send();
+                    }),
+            ])
             ->defaultSort('created_at', 'desc');
     }
 

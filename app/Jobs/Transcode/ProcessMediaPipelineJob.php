@@ -139,8 +139,10 @@ class ProcessMediaPipelineJob implements ShouldQueue
                 'external_id' => $request->external_id,
             ];
 
-            $result = $cdnApi->notifyResult($request->cdn_asset_id, (int) $request->cdn_source_id, $payload);
-            $this->logCallback($request, $cdnApi->baseUrl() . '/api/v1/media/worker/callback', $result);
+            if ($request->cdn_asset_id && $request->cdn_source_id) {
+                $result = $cdnApi->notifyResult($request->cdn_asset_id, (int) $request->cdn_source_id, $payload);
+                $this->logCallback($request, $cdnApi->baseUrl() . '/api/v1/media/worker/callback', $result);
+            }
 
             $request->update([
                 'status' => ProcessingRequestStatus::Completed,
@@ -172,8 +174,10 @@ class ProcessMediaPipelineJob implements ShouldQueue
             'status' => 'failed',
             'failure_reason' => $reason,
         ];
-        $result = $cdnApi->notifyResult($request->cdn_asset_id, (int) $request->cdn_source_id, $payload);
-        $this->logCallback($request, $cdnApi->baseUrl() . '/api/v1/media/worker/callback', $result);
+        if ($request->cdn_asset_id && $request->cdn_source_id) {
+            $result = $cdnApi->notifyResult($request->cdn_asset_id, (int) $request->cdn_source_id, $payload);
+            $this->logCallback($request, $cdnApi->baseUrl() . '/api/v1/media/worker/callback', $result);
+        }
     }
 
     private function logCallback(ProcessingRequest $request, string $url, array $result): void
