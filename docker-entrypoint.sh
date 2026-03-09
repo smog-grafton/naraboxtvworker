@@ -3,8 +3,12 @@ set -e
 
 # Coolify injects env vars at runtime; the image has no .env (excluded by .dockerignore).
 # Create .env from environment so Laravel and artisan see APP_KEY, Redis, DB, etc.
+# Values are quoted so passwords/tokens containing = or " do not break the file.
+# Do not exit on .env write failure (e.g. read-only fs); Laravel can still use getenv().
 if [ ! -f /app/.env ]; then
-    for key in APP_NAME APP_ENV APP_KEY APP_DEBUG APP_URL \
+    (
+        set +e
+        for key in APP_NAME APP_ENV APP_KEY APP_DEBUG APP_URL \
         LOG_CHANNEL LOG_STACK LOG_LEVEL \
         DB_CONNECTION DB_HOST DB_PORT DB_DATABASE DB_USERNAME DB_PASSWORD DB_SSL_MODE DB_SOCKET DB_CHARSET DB_COLLATION \
         QUEUE_CONNECTION CACHE_STORE SESSION_DRIVER SESSION_LIFETIME \
@@ -16,15 +20,19 @@ if [ ! -f /app/.env ]; then
         HORIZON_PROBE_PROCESSES HORIZON_SYNC_PROCESSES; do
         val="$(printenv "$key" 2>/dev/null || true)"
         [ -z "$val" ] && continue
-        printf '%s=%s\n' "$key" "$val" >> /app/.env
+        # Quote value and escape double quotes so = and " in passwords do not break .env
+        escaped=$(echo "$val" | sed 's/"/\\"/g')
+        printf '%s="%s"\n' "$key" "$escaped" >> /app/.env
     done
-    # Ensure APP_KEY is present (required; empty causes 500)
-    if ! grep -q '^APP_KEY=' /app/.env 2>/dev/null; then
-        echo 'APP_KEY=' >> /app/.env
-    fi
+        # Ensure APP_KEY is present (required; empty causes 500)
+        if ! grep -q '^APP_KEY=' /app/.env 2>/dev/null; then
+            echo 'APP_KEY=' >> /app/.env
+        fi
+    ) || true
 fi
 
 # Coolify/Traefik route to port 3000: run Laravel web server so Filament and API are reachable.
 php artisan serve --host=0.0.0.0 --port=3000 &
-# Horizon as main process (receives signals, keeps container running)
+# Horizon as main process (receives signals, keeps container running).
+# Use exec so Horizon gets PID 1 and receives SIGTERM for graceful shutdown.
 exec php artisan horizon
