@@ -4,9 +4,9 @@ namespace App\Jobs\Transcode;
 
 use App\Enums\ProcessingRequestStatus;
 use App\Models\CallbackLog;
+use App\Models\HlsArtifact;
 use App\Models\ProcessingRequest;
 use App\Services\Cdn\CdnApiService;
-use App\Services\Cdn\CdnUploadService;
 use App\Services\Media\FfmpegTranscodeService;
 use App\Services\Media\MediaDownloadService;
 use App\Services\TempFileService;
@@ -37,7 +37,6 @@ class ProcessMediaPipelineJob implements ShouldQueue
         MediaDownloadService $downloadService,
         TempFileService $tempFileService,
         FfmpegTranscodeService $transcodeService,
-        CdnUploadService $cdnUpload,
         CdnApiService $cdnApi
     ): void {
         $request = $this->processingRequest->fresh();
@@ -95,36 +94,49 @@ class ProcessMediaPipelineJob implements ShouldQueue
                 return;
             }
             $paths = $request->artifact_paths ?? [];
+            if (! is_array($paths)) {
+                $paths = [];
+            }
             $paths[] = $hlsZipPath;
             $request->artifact_paths = $paths;
             $request->save();
 
             $qualitiesJson = $hlsResult['qualities_json'] ?? [];
+            $qualityStatus = $hlsResult['quality_status'] ?? 'completed';
+
+            $artifactConfig = config('media_worker.artifacts', []);
+            $ttlMinutes = (int) ($artifactConfig['ttl_minutes'] ?? 60);
+
+            $artifact = HlsArtifact::updateOrCreate(
+                ['processing_request_id' => $request->id],
+                [
+                    'external_id' => $request->external_id,
+                    'cdn_asset_id' => $request->cdn_asset_id,
+                    'cdn_source_id' => $request->cdn_source_id,
+                    'status' => 'artifact_ready',
+                    'quality_status' => $qualityStatus,
+                    'qualities_json' => $qualitiesJson,
+                    'hls_dir' => $hlsDir,
+                    'zip_path' => $hlsZipPath,
+                    'zip_size_bytes' => is_file($hlsZipPath) ? filesize($hlsZipPath) : null,
+                    'download_token' => $this->generateDownloadToken(),
+                    'download_expires_at' => now()->addMinutes($ttlMinutes > 0 ? $ttlMinutes : 60),
+                ]
+            );
+
+            $artifactDownloadUrl = url("/api/v1/artifacts/{$artifact->download_token}");
 
             $request->update(['status' => ProcessingRequestStatus::Uploading]);
-            try {
-                $uploadResult = $cdnUpload->uploadOptimized(
-                    $request->cdn_asset_id,
-                    (int) $request->cdn_source_id,
-                    $optimizedPath,
-                    $hlsZipPath
-                );
-            } catch (\Throwable $e) {
-                $this->failRequest($request, 'Upload failed: ' . $e->getMessage(), $cdnApi);
-                return;
-            }
-
-            $optimizedPathStored = $uploadResult['optimized_path'] ?? null;
-            $hlsMasterPath = $uploadResult['hls_master_path'] ?? null;
-            $playbackType = 'hls';
 
             $payload = [
-                'status' => 'completed',
-                'optimized_path' => $optimizedPathStored,
-                'hls_master_path' => $hlsMasterPath,
+                'status' => $qualityStatus === 'completed' ? 'completed' : 'partial',
+                'artifact_download_url' => $artifactDownloadUrl,
+                'artifact_expires_at' => $artifact->download_expires_at?->toIso8601String(),
+                'quality_status' => $qualityStatus,
                 'qualities_json' => $qualitiesJson,
                 'is_faststart' => true,
-                'playback_type' => $playbackType,
+                'playback_type' => 'hls',
+                'external_id' => $request->external_id,
             ];
 
             $result = $cdnApi->notifyResult($request->cdn_asset_id, (int) $request->cdn_source_id, $payload);
@@ -186,6 +198,7 @@ class ProcessMediaPipelineJob implements ShouldQueue
         if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             return false;
         }
+        $rootLength = strlen(rtrim($dirPath, DIRECTORY_SEPARATOR)) + 1;
         $files = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($dirPath, \RecursiveDirectoryIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::LEAVES_ONLY
@@ -195,10 +208,21 @@ class ProcessMediaPipelineJob implements ShouldQueue
                 continue;
             }
             $path = $file->getRealPath();
-            $relative = substr($path, strlen($dirPath) + 1);
+            if ($path === false) {
+                continue;
+            }
+            $relative = substr($path, $rootLength);
+            if ($relative === false || $relative === '') {
+                continue;
+            }
             $zip->addFile($path, $relative);
         }
         $zip->close();
         return is_file($zipPath) && filesize($zipPath) > 0;
+    }
+
+    private function generateDownloadToken(): string
+    {
+        return bin2hex(random_bytes(32));
     }
 }

@@ -24,7 +24,7 @@ class ProcessingRequestResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->withCount(['attempts', 'callbackLogs', 'syncLogs']);
+        return parent::getEloquentQuery()->withCount(['attempts', 'callbackLogs', 'syncLogs'])->with('hlsArtifact');
     }
 
     public static function table(Table $table): Table
@@ -49,6 +49,8 @@ class ProcessingRequestResource extends Resource
                 TextColumn::make('cdn_source_id')->label('CDN Source')->toggleable(),
                 TextColumn::make('source_url')->limit(40)->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('failure_reason')->limit(40)->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('hlsArtifact.status')->label('Artifact')->badge()->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('hlsArtifact.download_expires_at')->label('Artifact expires')->dateTime()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('attempts_count')->label('Attempts')->suffix(' attempts'),
                 TextColumn::make('callback_logs_count')->label('Callbacks')->suffix(' logs'),
                 TextColumn::make('received_at')->dateTime()->sortable(),
@@ -63,6 +65,11 @@ class ProcessingRequestResource extends Resource
             ])
             ->actions([
                 \Filament\Tables\Actions\ViewAction::make(),
+                \Filament\Tables\Actions\Action::make('copy_artifact_url')
+                    ->label('Copy artifact URL')
+                    ->icon('heroicon-o-link')
+                    ->visible(fn (ProcessingRequest $record): bool => $record->hlsArtifact?->download_token && $record->hlsArtifact?->status === 'artifact_ready')
+                    ->copyable(fn (ProcessingRequest $record): string => rtrim(config('app.url'), '/') . '/api/v1/artifacts/' . ($record->hlsArtifact?->download_token ?? '')),
                 \Filament\Tables\Actions\Action::make('retry')
                     ->label('Retry')
                     ->icon('heroicon-o-arrow-path')

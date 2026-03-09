@@ -27,11 +27,20 @@ class MediaDownloadService
             @mkdir($dir, 0755, true);
         }
 
+        $downloadConfig = config('media_worker.download', []);
+        $timeout = (int) ($downloadConfig['timeout'] ?? 600);
+        $connectTimeout = (int) ($downloadConfig['connect_timeout'] ?? 30);
+        $retryTimes = max(0, (int) ($downloadConfig['retry_times'] ?? 3));
+        $retrySleepMs = max(0, (int) ($downloadConfig['retry_sleep_ms'] ?? 500));
+
         try {
-            $response = Http::timeout(300)
-                ->connectTimeout(30)
+            $client = Http::retry($retryTimes, $retrySleepMs)
+                ->timeout($timeout)
+                ->connectTimeout($connectTimeout)
                 ->withOptions(['sink' => $localPath])
-                ->get($url);
+                ->accept('*/*');
+
+            $response = $client->get($url);
 
             if (! $response->successful()) {
                 Log::warning('MediaDownloadService: download failed', [

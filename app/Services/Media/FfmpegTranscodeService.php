@@ -120,7 +120,11 @@ class FfmpegTranscodeService
      * Generate HLS variants into a directory. Directory must exist and be writable.
      * Creates variant subdirs (e.g. 1080p/, 720p/, 480p/) with index.m3u8 + segments, and master.m3u8 at root.
      *
-     * @return array{qualities_json: array<int, array{id: string, label: string, height: int, width: int|null, bandwidth: int, path: string}>, success: bool}
+     * @return array{
+     *     qualities_json: array<int, array{id: string, label: string, height: int, width: int|null, bandwidth: int, path: string}>,
+     *     success: bool,
+     *     quality_status?: string
+     * }
      */
     public function generateHls(string $inputPath, string $hlsDir): array
     {
@@ -136,8 +140,15 @@ class FfmpegTranscodeService
         $hasAudio = $this->probeHasAudio($ffprobe, $inputPath);
 
         $profiles = $this->resolveProfiles($sourceHeight);
+        $requestedProfilesCount = count($profiles);
         if ($profiles === []) {
-            $profiles = [['label' => 'source', 'height' => max(240, (int) ($sourceHeight ?: 480)), 'bitrate' => 900000, 'audio_bitrate' => '96k']];
+            $profiles = [[
+                'label' => 'source',
+                'height' => max(240, (int) ($sourceHeight ?: 480)),
+                'bitrate' => 900000,
+                'audio_bitrate' => '96k',
+            ]];
+            $requestedProfilesCount = max($requestedProfilesCount, 1);
         }
 
         if (! is_dir($hlsDir)) {
@@ -163,6 +174,11 @@ class FfmpegTranscodeService
                 continue;
             }
 
+            if (! $this->validateVariantPlaylist($playlistPath)) {
+                Log::warning('FfmpegTranscodeService: HLS variant validation failed', ['profile' => $label]);
+                continue;
+            }
+
             $generated[] = [
                 'id' => $label,
                 'label' => strtoupper($label),
@@ -179,7 +195,11 @@ class FfmpegTranscodeService
             $fallbackPlaylist = $fallbackDir . '/index.m3u8';
             $fallbackSegment = $fallbackDir . '/segment_%05d.ts';
             $h = max(240, (int) ($sourceHeight ?: 480));
-            if ($this->runHlsVariant($ffmpeg, $inputPath, $fallbackPlaylist, $fallbackSegment, $h, '96k', $hasAudio) && is_file($fallbackPlaylist)) {
+            if (
+                $this->runHlsVariant($ffmpeg, $inputPath, $fallbackPlaylist, $fallbackSegment, $h, '96k', $hasAudio)
+                && is_file($fallbackPlaylist)
+                && $this->validateVariantPlaylist($fallbackPlaylist)
+            ) {
                 $generated[] = [
                     'id' => 'source',
                     'label' => 'SOURCE',
@@ -213,7 +233,21 @@ class FfmpegTranscodeService
             return ['qualities_json' => [], 'success' => false];
         }
 
-        return ['qualities_json' => $generated, 'success' => true];
+        if (! $this->validateMasterPlaylist($masterPath, $generated)) {
+            Log::warning('FfmpegTranscodeService: master playlist validation failed', ['master' => $masterPath]);
+            return ['qualities_json' => [], 'success' => false];
+        }
+
+        $qualityStatus = 'completed';
+        if ($requestedProfilesCount > 0 && count($generated) < $requestedProfilesCount) {
+            $qualityStatus = 'partial';
+        }
+
+        return [
+            'qualities_json' => $generated,
+            'success' => true,
+            'quality_status' => $qualityStatus,
+        ];
     }
 
     private function probeHeight(string $ffprobe, string $inputPath): ?int
@@ -321,5 +355,96 @@ class FfmpegTranscodeService
             return false;
         }
         return is_file($playlistPath) && filesize($playlistPath) > 0;
+    }
+
+    private function validateVariantPlaylist(string $playlistPath): bool
+    {
+        $dir = dirname($playlistPath);
+        $contents = @file_get_contents($playlistPath);
+        if ($contents === false || $contents === '') {
+            return false;
+        }
+
+        $lines = preg_split('/\r\n|\r|\n/', $contents) ?: [];
+        $segmentCount = 0;
+
+        for ($i = 0, $len = count($lines); $i < $len; $i++) {
+            $line = trim($lines[$i]);
+            if ($line === '' || str_starts_with($line, '#') === false) {
+                continue;
+            }
+
+            if (str_starts_with($line, '#EXTINF')) {
+                // Next non-comment, non-empty line should be the segment URI.
+                $j = $i + 1;
+                while ($j < $len && (trim($lines[$j]) === '' || str_starts_with(trim($lines[$j]), '#'))) {
+                    $j++;
+                }
+                if ($j >= $len) {
+                    continue;
+                }
+                $segment = trim($lines[$j]);
+                if ($segment === '') {
+                    continue;
+                }
+                $segmentPath = $dir . '/' . $segment;
+                if (! is_file($segmentPath) || filesize($segmentPath) === 0) {
+                    Log::warning('FfmpegTranscodeService: missing or empty HLS segment', [
+                        'playlist' => $playlistPath,
+                        'segment' => $segmentPath,
+                    ]);
+                    return false;
+                }
+                $segmentCount++;
+            }
+        }
+
+        return $segmentCount > 0;
+    }
+
+    /**
+     * @param array<int, array{id: string, label: string, height: int, width: int|null, bandwidth: int, path: string}> $variants
+     */
+    private function validateMasterPlaylist(string $masterPath, array $variants): bool
+    {
+        if (! is_file($masterPath) || filesize($masterPath) === 0) {
+            return false;
+        }
+
+        $contents = @file_get_contents($masterPath);
+        if ($contents === false || $contents === '') {
+            return false;
+        }
+
+        $lines = preg_split('/\r\n|\r|\n/', $contents) ?: [];
+        $variantPaths = array_column($variants, 'path');
+        $seenStreams = 0;
+        $expectedNext = null;
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            if (str_starts_with($line, '#EXT-X-STREAM-INF')) {
+                $seenStreams++;
+                $expectedNext = true;
+                continue;
+            }
+
+            if ($expectedNext === true) {
+                $expectedNext = null;
+                if (! in_array($line, $variantPaths, true)) {
+                    Log::warning('FfmpegTranscodeService: master references unknown variant', [
+                        'master' => $masterPath,
+                        'line' => $line,
+                    ]);
+                    return false;
+                }
+            }
+        }
+
+        return $seenStreams > 0;
     }
 }

@@ -14,6 +14,13 @@ return [
 
     'temp_dir' => env('WORKER_TEMP_DIR', storage_path('app/worker-temp')),
 
+    'download' => [
+        'timeout' => env('WORKER_DOWNLOAD_TIMEOUT', 600),
+        'connect_timeout' => env('WORKER_DOWNLOAD_CONNECT_TIMEOUT', 30),
+        'retry_times' => env('WORKER_DOWNLOAD_RETRY_TIMES', 3),
+        'retry_sleep_ms' => env('WORKER_DOWNLOAD_RETRY_SLEEP_MS', 500),
+    ],
+
     'ffmpeg_bin' => env('FFMPEG_BIN', 'ffmpeg'),
     'ffprobe_bin' => env('FFPROBE_BIN', 'ffprobe'),
 
@@ -26,6 +33,12 @@ return [
     'cdn' => [
         'api_base_url' => rtrim(env('CDN_API_BASE_URL', 'https://cdn.naraboxtv.com'), '/'),
         'api_token' => env('CDN_API_TOKEN', ''),
+    ],
+
+    'artifacts' => [
+        'enabled' => env('WORKER_ARTIFACTS_ENABLED', true),
+        'ttl_minutes' => env('WORKER_ARTIFACTS_TTL_MINUTES', 60),
+        'cleanup_batch_size' => env('WORKER_ARTIFACTS_CLEANUP_BATCH_SIZE', 100),
     ],
 
     'portal' => [

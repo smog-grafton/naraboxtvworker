@@ -11,3 +11,5 @@ Artisan::command('inspire', function () {
 
 // Optional: dispatch a healthcheck job on schedule to prove queue is working (disable in production if not needed)
 // Schedule::job(new RunFfmpegHealthcheckJob)->hourly();
+
+Schedule::command('worker:cleanup-artifacts')->hourly();
