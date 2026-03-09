@@ -89,7 +89,7 @@ The **NaraboxTV File Server Worker** (also called “transcoder” or “Laravel
 1. **CDN** has a media source ready (e.g. after import). It can either:
    - Run optimization locally (existing `optimization` queue), or
    - Send the job to the **worker** by calling `POST {WORKER_URL}/api/v1/processing/submit` with Bearer `WORKER_API_TOKEN`, passing `cdn_asset_id`, `cdn_source_id`, `source_url`, and optional `payload` / `callback_url` / `portal_sync_hint`.
-2. **Worker** creates a `ProcessingRequest`, dispatches `ProcessMediaPipelineJob` to the `transcode` queue. When the pipeline completes (or fails), it calls the **CDN** at `POST {CDN_URL}/api/v1/media/worker/callback` with `asset_id`, `source_id`, `status` (completed/failed), and optional paths/qualities.
+2. **Worker** creates a `ProcessingRequest`, dispatches `ProcessMediaPipelineJob` to the `transcode` queue. When the pipeline completes (or fails), it calls the **CDN** at `POST {CDN_URL}/api/v1/media/worker/callback` with `asset_id`, `source_id`, `status` (completed/failed), and optional paths/qualities. The worker **cleans up** temp files and artifacts after processing so the worker VPS does not run out of space; optimized files live on the CDN.
 3. **Worker** may call the **Portal** at `POST {PORTAL_URL}/api/v1/worker/sync` with `cdn_asset_id`, `cdn_source_id`, and optional `hint` so the Portal can refresh derived VideoSources for playback. The Portal expects Bearer `PORTAL_WORKER_API_TOKEN` (same value as the worker’s `PORTAL_API_TOKEN`).
 
 ### Portal (naraboxt-lara) ↔ Worker
@@ -99,7 +99,8 @@ The **NaraboxTV File Server Worker** (also called “transcoder” or “Laravel
 
 ### CDN (naraboxtv-cdn) ↔ Worker
 
-- **CDN calls worker:** `POST {worker}/api/v1/processing/submit` with Bearer `WORKER_API_TOKEN` (from CDN env: `CDN_LARAVEL_WORKER_API_URL`, `CDN_LARAVEL_WORKER_API_TOKEN`). Enable with `CDN_LARAVEL_WORKER_ENABLED=true`.
+- **CDN calls worker:** `POST {worker}/api/v1/processing/submit` with Bearer `WORKER_API_TOKEN` (from CDN env: `CDN_LARAVEL_WORKER_API_URL`, `CDN_LARAVEL_WORKER_API_TOKEN`). Enable with `CDN_LARAVEL_WORKER_ENABLED=true`. Set `CDN_LARAVEL_WORKER_API_URL` to the worker’s public URL (e.g. `http://wwwogwgw80cwo4g4skw8oggg.157.173.104.218.sslip.io`).
+- **Queue pending sources:** On the CDN, run `php artisan media:queue-pending-for-worker` to send all pending/failed optimization sources to the worker (when worker is enabled). Use `--limit=N` to cap how many are queued.
 - **Worker calls CDN:** `POST {CDN}/api/v1/media/worker/callback` with Bearer `CDN_API_TOKEN`. Payload: `asset_id`, `source_id`, `status`, optional `optimized_path`, `hls_master_path`, `qualities_json`, `is_faststart`, `playback_type`, `failure_reason`.
 
 ---
