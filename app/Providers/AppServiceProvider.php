@@ -20,9 +20,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Allow any authenticated user to view Horizon (overrides empty whitelist from horizon:install).
-        Gate::define('viewHorizon', function ($user) {
-            return $user !== null;
+        // Allow access to Horizon. Rely on Coolify/proxy (e.g. HTTP auth or private URL) for access control.
+        Gate::define('viewHorizon', function ($user = null) {
+            return true;
         });
     }
 }

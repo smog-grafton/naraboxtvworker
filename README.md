@@ -233,7 +233,7 @@ If the proxy shows 502, ensure the app inside the container listens on **port 30
 
 ### 500 Internal Server Error on / or /admin
 
-The container has **no `.env` file** (it’s in `.dockerignore`). Coolify injects environment variables at runtime. The **entrypoint** creates `/app/.env` from those variables when it’s missing, so Laravel and `php artisan` see the same config. If you still get 500, check the following.
+The container has **no `.env` file** (it’s in `.dockerignore`). The app **relies only on Coolify (or runtime) environment variables**; no `.env` is written in the container. Laravel reads config via `getenv()`. If you still get 500, check the following.
 
 1. **APP_KEY is required**  
    In Coolify, set **APP_KEY** to a valid Laravel key. Generate one locally:
@@ -249,7 +249,7 @@ The container has **no `.env` file** (it’s in `.dockerignore`). Coolify inject
    Set **APP_DEBUG=true** in Coolify (temporarily), redeploy, and open `/` or `/admin` again. The response will show the exception and message. Fix the cause, then set **APP_DEBUG=false** again.
 
 4. **Artisan in the container**  
-   `php artisan key:generate` fails in the container because there is no `.env` until the entrypoint runs. You don’t need to run it there: set **APP_KEY** in Coolify (as above). After the entrypoint has created `.env`, you can run other commands (e.g. `php artisan migrate --force`) in Coolify’s “Execute command” / terminal.
+   Set **APP_KEY** in Coolify (as above). You can run other commands (e.g. `php artisan migrate --force`) in Coolify’s “Execute command” / terminal; they use the same Coolify env vars.
 
 ---
 
