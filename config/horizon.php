@@ -103,7 +103,7 @@ return [
         ],
         'local' => [
             'transcode-supervisor' => [
-                'maxProcesses' => 1,
+                'maxProcesses' => (int) env('HORIZON_TRANSCODE_PROCESSES', 2),
             ],
             'probe-supervisor' => [
                 'maxProcesses' => 2,

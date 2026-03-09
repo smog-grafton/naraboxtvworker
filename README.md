@@ -73,6 +73,7 @@ The **NaraboxTV File Server Worker** (also called “transcoder” or “Laravel
 - **Role:** Runs queue workers for `transcode`, `probe`, and `sync` with separate supervisors (process count, timeout, memory per queue).
 - **Dashboard:** When the web server is running (e.g. `https://worker.naraboxtv.com`), Horizon UI is at `/horizon` (same auth as Laravel).
 - **Config:** `config/horizon.php`; env vars `HORIZON_PREFIX`, `HORIZON_TRANSCODE_PROCESSES`, `HORIZON_TRANSCODE_TIMEOUT`, `HORIZON_PROBE_PROCESSES`, `HORIZON_SYNC_PROCESSES`, etc.
+- **Scaling:** Each transcode job (download → faststart → HLS → upload) can take **15–60+ minutes** for long videos. Set `HORIZON_TRANSCODE_PROCESSES=4` (or higher) so multiple jobs run in parallel; otherwise one long job blocks the queue and others stay in Pending.
 
 ---
 

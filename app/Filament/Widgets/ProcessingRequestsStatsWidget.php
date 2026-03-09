@@ -23,12 +23,19 @@ class ProcessingRequestsStatsWidget extends BaseWidget
             ProcessingRequestStatus::Syncing,
         ];
 
+        $pendingOrRunning = ProcessingRequest::whereIn('status', $inProgress)->count();
+        $received = ProcessingRequest::where('status', ProcessingRequestStatus::Received)->count();
+
         return [
             Stat::make('Total requests', ProcessingRequest::count())
                 ->description('All time')
                 ->descriptionIcon('heroicon-m-queue-list'),
-            Stat::make('Pending / running', ProcessingRequest::whereIn('status', $inProgress)->count())
-                ->description('In progress (includes downloaded until pipeline completes)')
+            Stat::make('Pending / running', $pendingOrRunning)
+                ->description(
+                    $received === $pendingOrRunning && $pendingOrRunning > 0
+                        ? 'Waiting for a worker (increase HORIZON_TRANSCODE_PROCESSES). Jobs can take 15–60+ min per long video.'
+                        : 'In progress (download → faststart → HLS → upload). Each job can take 15–60+ min for long videos.'
+                )
                 ->color('warning'),
             Stat::make('Completed', ProcessingRequest::where('status', ProcessingRequestStatus::Completed)->count())
                 ->description('Success')

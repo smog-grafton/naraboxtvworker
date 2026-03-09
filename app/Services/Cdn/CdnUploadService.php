@@ -56,13 +56,14 @@ class CdnUploadService
         if (! $request->successful()) {
             $body = $request->json();
             $message = is_array($body) && isset($body['error']) ? (string) $body['error'] : $request->body();
+            $full = sprintf('HTTP %d: %s', $request->status(), $message ?: $request->reason());
             Log::warning('CdnUploadService: upload failed', [
                 'asset_id' => $assetId,
                 'source_id' => $sourceId,
                 'status' => $request->status(),
                 'body' => $message,
             ]);
-            throw new \RuntimeException('CDN upload failed: ' . $message);
+            throw new \RuntimeException('CDN upload failed: ' . $full);
         }
 
         $data = $request->json();
