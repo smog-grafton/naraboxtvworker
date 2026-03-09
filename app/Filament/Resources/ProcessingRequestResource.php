@@ -69,7 +69,19 @@ class ProcessingRequestResource extends Resource
                     ->label('Copy artifact URL')
                     ->icon('heroicon-o-link')
                     ->visible(fn (ProcessingRequest $record): bool => $record->hlsArtifact?->download_token && $record->hlsArtifact?->status === 'artifact_ready')
-                    ->copyable(fn (ProcessingRequest $record): string => rtrim(config('app.url'), '/') . '/api/v1/artifacts/' . ($record->hlsArtifact?->download_token ?? '')),
+                    ->action(function (ProcessingRequest $record): void {
+                        $base = rtrim(config('app.url'), '/');
+                        $token = $record->hlsArtifact?->download_token;
+                        if (! $token) {
+                            return;
+                        }
+                        $url = $base . '/api/v1/artifacts/' . $token;
+                        \Filament\Notifications\Notification::make()
+                            ->title('Artifact URL')
+                            ->body($url)
+                            ->success()
+                            ->send();
+                    }),
                 \Filament\Tables\Actions\Action::make('retry')
                     ->label('Retry')
                     ->icon('heroicon-o-arrow-path')
