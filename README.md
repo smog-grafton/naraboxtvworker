@@ -251,6 +251,22 @@ The container has **no `.env` file** (it’s in `.dockerignore`). The app **reli
 4. **Artisan in the container**  
    Set **APP_KEY** in Coolify (as above). You can run other commands (e.g. `php artisan migrate --force`) in Coolify’s “Execute command” / terminal; they use the same Coolify env vars.
 
+### APP_URL and production URLs
+
+Set **APP_URL** in Coolify to the worker’s **public URL** (e.g. `http://wwwogwgw80cwo4g4skw8oggg.157.173.104.218.sslip.io` or your custom domain). This is used for redirects and for the Horizon dashboard’s API requests. Recommended base URLs:
+
+- **Worker:** your Coolify app URL (e.g. the sslip.io URL above, or `https://worker.naraboxtv.com`)
+- **Portal:** `https://portal.naraboxtv.com` (set **PORTAL_API_BASE_URL**)
+- **CDN:** `https://cdn.naraboxtv.com` (set **CDN_API_BASE_URL**)
+
+### Horizon dashboard: 500 on /horizon/api/masters, /horizon/api/stats, etc.
+
+Those endpoints read from **Redis**. If they return 500:
+
+1. Ensure **REDIS_HOST**, **REDIS_PORT**, and **REDIS_PASSWORD** in Coolify use the **internal** Redis host (Coolify Redis service name), not `127.0.0.1`.
+2. Do **not** run `php artisan config:cache` in the container if config is loaded from env at runtime; if you did, run `php artisan config:clear` in Coolify’s “Execute command”.
+3. Set **APP_DEBUG=true** temporarily and open `/horizon` again; the response body or `storage/logs/laravel.log` will show the Redis (or other) exception.
+
 ---
 
 ## Worker API (incoming)
