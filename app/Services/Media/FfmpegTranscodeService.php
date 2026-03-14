@@ -87,6 +87,7 @@ class FfmpegTranscodeService
         $process = new Process([
             $ffmpeg,
             '-y',
+            '-loglevel', 'error',
             '-i', $inputPath,
             '-c', 'copy',
             '-movflags', '+faststart',
@@ -263,7 +264,7 @@ class FfmpegTranscodeService
     }
 
     /**
-     * Extract the useful part of FFmpeg/ffprobe stderr (real error at the end; banner at the start).
+     * Extract the useful part of FFmpeg/ffprobe stderr (real error; skip banner and progress).
      */
     private function tailStderr(?string $stderr): string
     {
@@ -271,7 +272,7 @@ class FfmpegTranscodeService
             return '';
         }
         $lines = preg_split('/\r\n|\r|\n/', $stderr) ?: [];
-        $skipPatterns = [
+        $bannerPatterns = [
             '/^ffmpeg version/i',
             '/^ffprobe version/i',
             '/^built with /i',
@@ -280,28 +281,45 @@ class FfmpegTranscodeService
             '/^libav/i',
             '/copyright/i',
         ];
-        $meaningful = [];
+        $progressPattern = '/^\s*frame=\s*\d+|^\s*fps=|\bq=-?\d+\.\d+|size=\s*\d+[KMG]?iB|time=\d|bitrate=|\bspeed=\s*[\d.]+x|\belapsed=/i';
+        $errorKeywords = ['error', 'invalid', 'failed', 'could not', 'cannot', 'no such', 'invalid argument', 'does not contain', 'not found'];
+        $errorLines = [];
+        $otherLines = [];
         foreach ($lines as $line) {
             $line = trim($line);
             if ($line === '') {
                 continue;
             }
-            $skip = false;
-            foreach ($skipPatterns as $p) {
+            foreach ($bannerPatterns as $p) {
                 if (preg_match($p, $line)) {
-                    $skip = true;
+                    $line = '';
                     break;
                 }
             }
-            if (! $skip) {
-                $meaningful[] = $line;
+            if ($line === '' || preg_match($progressPattern, $line)) {
+                continue;
+            }
+            $lower = strtolower($line);
+            $isError = false;
+            foreach ($errorKeywords as $k) {
+                if (str_contains($lower, $k)) {
+                    $isError = true;
+                    break;
+                }
+            }
+            if ($isError) {
+                $errorLines[] = $line;
+            } else {
+                $otherLines[] = $line;
             }
         }
-        if ($meaningful === []) {
-            return trim(substr($stderr, -600));
+        if ($errorLines !== []) {
+            return implode(' ', array_slice($errorLines, -5));
         }
-        $tail = array_slice($meaningful, -15);
-        return implode(' ', $tail);
+        if ($otherLines !== []) {
+            return implode(' ', array_slice($otherLines, -10));
+        }
+        return trim(substr($stderr, -600));
     }
 
     private function probeHeight(string $ffprobe, string $inputPath): ?int
@@ -372,6 +390,7 @@ class FfmpegTranscodeService
         $args = [
             $ffmpeg,
             '-y',
+            '-loglevel', 'error',
             '-i', $inputPath,
             '-map', '0:v:0',
             '-map', '0:a:0?',
