@@ -7,6 +7,9 @@ use Symfony\Component\Process\Process;
 
 class FfmpegTranscodeService
 {
+    /** Last error message from probe/faststart/generateHls (for failure_reason). */
+    public ?string $lastError = null;
+
     /** Default HLS profiles: label => [height, bitrate, audio_bitrate] */
     private const HLS_PROFILES = [
         '1080p' => ['height' => 1080, 'bitrate' => 5500000, 'audio_bitrate' => '192k'],
@@ -32,6 +35,7 @@ class FfmpegTranscodeService
         $process->run();
 
         if (! $process->isSuccessful()) {
+            $this->lastError = $process->getErrorOutput() ?: 'Probe failed (exit ' . $process->getExitCode() . ')';
             Log::warning('FfmpegTranscodeService: probe failed', [
                 'path' => $localPath,
                 'exit_code' => $process->getExitCode(),
@@ -39,6 +43,7 @@ class FfmpegTranscodeService
             ]);
             return [];
         }
+        $this->lastError = null;
 
         $json = $process->getOutput();
         $data = json_decode($json, true);
@@ -91,6 +96,7 @@ class FfmpegTranscodeService
         $process->run();
 
         if (! $process->isSuccessful()) {
+            $this->lastError = $process->getErrorOutput() ?: 'Faststart failed (exit ' . $process->getExitCode() . ')';
             Log::warning('FfmpegTranscodeService: faststart failed', [
                 'input' => $inputPath,
                 'output' => $outputPath,
@@ -104,6 +110,7 @@ class FfmpegTranscodeService
         }
 
         if (! is_file($outputPath) || filesize($outputPath) === 0) {
+            $this->lastError = 'Faststart produced empty or missing output file.';
             Log::warning('FfmpegTranscodeService: faststart produced empty or missing output', [
                 'output' => $outputPath,
             ]);
@@ -113,6 +120,7 @@ class FfmpegTranscodeService
             return false;
         }
 
+        $this->lastError = null;
         return true;
     }
 
@@ -212,9 +220,11 @@ class FfmpegTranscodeService
         }
 
         if ($generated === []) {
+            $this->lastError = 'No HLS variants generated (check FFmpeg logs).';
             Log::warning('FfmpegTranscodeService: no HLS variants generated');
             return ['qualities_json' => [], 'success' => false];
         }
+        $this->lastError = null;
 
         usort($generated, fn (array $a, array $b): int => (int) $b['height'] <=> (int) $a['height']);
 
@@ -230,10 +240,12 @@ class FfmpegTranscodeService
             $masterLines[] = $v['path'];
         }
         if (@file_put_contents($masterPath, implode("\n", $masterLines) . "\n") === false) {
+            $this->lastError = 'Failed to write master.m3u8.';
             return ['qualities_json' => [], 'success' => false];
         }
 
         if (! $this->validateMasterPlaylist($masterPath, $generated)) {
+            $this->lastError = 'Master playlist validation failed.';
             Log::warning('FfmpegTranscodeService: master playlist validation failed', ['master' => $masterPath]);
             return ['qualities_json' => [], 'success' => false];
         }

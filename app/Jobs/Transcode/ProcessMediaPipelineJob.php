@@ -51,10 +51,6 @@ class ProcessMediaPipelineJob implements ShouldQueue
 
         try {
             $downloadedPath = $downloadService->download($request);
-            if ($downloadedPath === null) {
-                $this->failRequest($request, 'Download failed', $cdnApi);
-                return;
-            }
 
             $request->update(['status' => ProcessingRequestStatus::Probing]);
             $probe = $transcodeService->probe($downloadedPath);
@@ -63,12 +59,29 @@ class ProcessMediaPipelineJob implements ShouldQueue
                     'request_id' => $request->id,
                     'probe' => $probe,
                 ]);
+                $formatName = $probe['format_name'] ?? '';
+                $validVideoFormats = ['mov', 'mp4', 'm4a', '3gp', 'matroska', 'webm', 'avi', 'mpeg', 'flv', 'ts'];
+                $isVideo = false;
+                if (is_string($formatName) && $formatName !== '') {
+                    foreach ($validVideoFormats as $f) {
+                        if (str_contains($formatName, $f)) {
+                            $isVideo = true;
+                            break;
+                        }
+                    }
+                }
+                if (! $isVideo) {
+                    $this->failRequest($request, 'Downloaded file is not a valid video (format: ' . substr((string) $formatName, 0, 100) . '). Check URL or server response.', $cdnApi);
+                    return;
+                }
             }
 
             $optimizedPath = $tempFileService->pathForRequest($request->external_id, 'optimized.mp4');
             $request->update(['status' => ProcessingRequestStatus::Transcoding]);
             if (! $transcodeService->faststart($downloadedPath, $optimizedPath)) {
-                $this->failRequest($request, 'Faststart (transcode) failed', $cdnApi);
+                $stderr = $transcodeService->lastError ?? '';
+                $reason = $stderr !== '' ? 'Faststart failed: ' . substr($stderr, 0, 500) : 'Faststart (transcode) failed';
+                $this->failRequest($request, $reason, $cdnApi);
                 return;
             }
 
@@ -84,7 +97,8 @@ class ProcessMediaPipelineJob implements ShouldQueue
             $hlsDir = $tempFileService->hlsDirForRequest($request->external_id);
             $hlsResult = $transcodeService->generateHls($optimizedPath, $hlsDir);
             if (! ($hlsResult['success'] ?? false)) {
-                $this->failRequest($request, 'HLS generation failed', $cdnApi);
+                $reason = $transcodeService->lastError ?? 'HLS generation failed';
+                $this->failRequest($request, strlen($reason) > 600 ? substr($reason, 0, 600) : $reason, $cdnApi);
                 return;
             }
 
@@ -149,11 +163,13 @@ class ProcessMediaPipelineJob implements ShouldQueue
                 'completed_at' => now(),
             ]);
         } catch (\Throwable $e) {
+            $reason = $e->getMessage();
             Log::error('ProcessMediaPipelineJob: exception', [
                 'request_id' => $request->id ?? null,
-                'message' => $e->getMessage(),
+                'message' => $reason,
+                'exception' => get_class($e),
             ]);
-            $this->failRequest($request, $e->getMessage(), $cdnApi);
+            $this->failRequest($request, strlen($reason) > 1024 ? substr($reason, 0, 1021) . '...' : $reason, $cdnApi);
         } finally {
             $req = $this->processingRequest->fresh();
             if ($req) {
@@ -165,6 +181,7 @@ class ProcessMediaPipelineJob implements ShouldQueue
 
     private function failRequest(ProcessingRequest $request, string $reason, CdnApiService $cdnApi): void
     {
+        $reason = strlen($reason) > 1024 ? substr($reason, 0, 1021) . '...' : $reason;
         $request->update([
             'status' => ProcessingRequestStatus::Failed,
             'failure_reason' => $reason,

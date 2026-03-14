@@ -6,19 +6,30 @@ use App\Models\ProcessingRequest;
 use App\Services\TempFileService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 class MediaDownloadService
 {
+    /** User-Agent matching CDN remote fetcher so download scripts (e.g. mobifliks) accept the request. */
+    private const USER_AGENT = 'NaraboxWorker/1.0 (compatible; NaraboxCDNImporter/1.0)';
+
     public function __construct(
         private readonly TempFileService $tempFileService
     ) {}
 
-    public function download(ProcessingRequest $request): ?string
+    /**
+     * Download source_url to a local file. Uses same strategy as naraboxtv-cdn remote fetch:
+     * browser-like User-Agent, follow redirects, retries, optional IPv4/IPv6 fallback.
+     *
+     * @return string path to downloaded file
+     * @throws RuntimeException on any failure (message is persisted as failure_reason)
+     */
+    public function download(ProcessingRequest $request): string
     {
         $url = $request->source_url;
-        if (! $url) {
+        if (! $url || trim($url) === '') {
             Log::warning('MediaDownloadService: no source_url', ['request_id' => $request->id]);
-            return null;
+            throw new RuntimeException('Download failed: no source URL.');
         }
 
         $localPath = $this->tempFileService->pathForRequest($request->external_id, 'source.mp4');
@@ -28,66 +39,126 @@ class MediaDownloadService
         }
 
         $downloadConfig = config('media_worker.download', []);
-        $timeout = (int) ($downloadConfig['timeout'] ?? 600);
-        $connectTimeout = (int) ($downloadConfig['connect_timeout'] ?? 30);
+        $timeout = max(60, (int) ($downloadConfig['timeout'] ?? 600));
+        $connectTimeout = max(10, (int) ($downloadConfig['connect_timeout'] ?? 30));
         $retryTimes = max(0, (int) ($downloadConfig['retry_times'] ?? 3));
         $retrySleepMs = max(0, (int) ($downloadConfig['retry_sleep_ms'] ?? 500));
 
-        try {
-            $client = Http::retry($retryTimes, $retrySleepMs)
-                ->timeout($timeout)
-                ->connectTimeout($connectTimeout)
-                ->withOptions(['sink' => $localPath])
-                ->accept('*/*');
+        $attempts = [
+            ['label' => 'default', 'options' => []],
+            ['label' => 'force_ipv4', 'options' => ['force_ip_resolve' => 'v4']],
+            ['label' => 'force_ipv6', 'options' => ['force_ip_resolve' => 'v6']],
+        ];
 
-            $response = $client->get($url);
+        $lastError = null;
 
-            if (! $response->successful()) {
-                Log::warning('MediaDownloadService: download failed', [
-                    'request_id' => $request->id,
-                    'status' => $response->status(),
-                ]);
-                if (is_file($localPath)) {
-                    @unlink($localPath);
+        foreach ($attempts as $attempt) {
+            try {
+                $this->attemptDownload(
+                    $url,
+                    $localPath,
+                    $timeout,
+                    $connectTimeout,
+                    $retryTimes,
+                    $retrySleepMs,
+                    $attempt['options']
+                );
+
+                if (! is_file($localPath) || filesize($localPath) === 0) {
+                    throw new RuntimeException('Download failed: remote server returned empty or missing file.');
                 }
-                return null;
-            }
 
-            if (! is_file($localPath) || filesize($localPath) === 0) {
-                Log::warning('MediaDownloadService: download produced empty or missing file', [
+                $paths = $request->artifact_paths ?? [];
+                if (! is_array($paths)) {
+                    $paths = [];
+                }
+                $paths[] = $localPath;
+                $request->artifact_paths = $paths;
+                $request->save();
+
+                Log::info('MediaDownloadService: download completed', [
                     'request_id' => $request->id,
                     'path' => $localPath,
+                    'size' => filesize($localPath),
+                ]);
+
+                return $localPath;
+            } catch (\Throwable $e) {
+                $lastError = $e;
+                Log::warning('MediaDownloadService: download attempt failed', [
+                    'request_id' => $request->id,
+                    'attempt' => $attempt['label'],
+                    'host' => parse_url($url, PHP_URL_HOST),
+                    'message' => $e->getMessage(),
                 ]);
                 if (is_file($localPath)) {
                     @unlink($localPath);
                 }
-                return null;
+                // If it's already our RuntimeException with a clear message, try next attempt only for connection/timeout
+                if ($e instanceof RuntimeException && ! $this->isRetryableMessage($e->getMessage())) {
+                    throw $e;
+                }
             }
+        }
 
-            $paths = $request->artifact_paths ?? [];
-            if (! is_array($paths)) {
-                $paths = [];
-            }
-            $paths[] = $localPath;
-            $request->artifact_paths = $paths;
-            $request->save();
+        $message = $lastError instanceof \Throwable
+            ? $lastError->getMessage()
+            : 'Download failed: unknown error.';
+        throw new RuntimeException($message);
+    }
 
-            Log::info('MediaDownloadService: download completed', [
-                'request_id' => $request->id,
-                'path' => $localPath,
-                'size' => filesize($localPath),
-            ]);
-            return $localPath;
-        } catch (\Throwable $e) {
-            Log::warning('MediaDownloadService: download exception', [
-                'request_id' => $request->id,
-                'message' => $e->getMessage(),
-            ]);
+    private function attemptDownload(
+        string $url,
+        string $localPath,
+        int $timeout,
+        int $connectTimeout,
+        int $retryTimes,
+        int $retrySleepMs,
+        array $extraOptions
+    ): void {
+        $client = Http::retry($retryTimes, $retrySleepMs, throw: false)
+            ->timeout($timeout)
+            ->connectTimeout($connectTimeout)
+            ->withHeaders([
+                'User-Agent' => self::USER_AGENT,
+                'Accept' => '*/*',
+            ])
+            ->withOptions(array_merge([
+                'sink' => $localPath,
+            ], $extraOptions));
+
+        $response = $client->get($url);
+
+        if (! $response->successful()) {
             if (is_file($localPath)) {
                 @unlink($localPath);
             }
-            return null;
+            $status = $response->status();
+            $bodyPreview = '';
+            try {
+                $body = $response->body();
+                if (is_string($body) && $body !== '') {
+                    $bodyPreview = substr(preg_replace('/\s+/', ' ', $body), 0, 200);
+                }
+            } catch (\Throwable) {
+            }
+            $msg = $bodyPreview !== ''
+                ? sprintf('Download failed: HTTP %d. Response: %s', $status, $bodyPreview)
+                : sprintf('Download failed: HTTP %d.', $status);
+            throw new RuntimeException($msg);
         }
+    }
+
+    private function isRetryableMessage(string $message): bool
+    {
+        $m = strtolower($message);
+        return str_contains($m, 'curl error 28')
+            || str_contains($m, 'curl error 7')
+            || str_contains($m, 'connection timed out')
+            || str_contains($m, 'failed to connect')
+            || str_contains($m, 'couldn\'t connect')
+            || str_contains($m, 'transfer closed')
+            || str_contains($m, 'unexpected eof');
     }
 
     public function cleanup(ProcessingRequest $request): void
