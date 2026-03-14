@@ -16,14 +16,27 @@ class TempFileService
         return rtrim($dir, '/');
     }
 
+    /**
+     * Per-request directory so all artifacts (source, optimized, hls) live in one place.
+     * Avoids "Error writing trailer: No such file or directory" and keeps cleanup simple.
+     */
+    public function requestDir(string $externalId): string
+    {
+        $dir = $this->tempDir() . '/' . Str::slug($externalId);
+        if (! is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        return $dir;
+    }
+
     public function pathForRequest(string $externalId, string $suffix = ''): string
     {
-        $base = $this->tempDir() . '/' . Str::slug($externalId);
+        $dir = $this->requestDir($externalId);
         if ($suffix !== '') {
-            return $base . '_' . preg_replace('/[^A-Za-z0-9._-]/', '_', $suffix);
+            $safe = preg_replace('/[^A-Za-z0-9._-]/', '_', $suffix);
+            return $dir . '/' . $safe;
         }
-
-        return $base;
+        return $dir;
     }
 
     /** Directory path for HLS output (worker creates it and zips it for CDN upload). */
@@ -34,35 +47,15 @@ class TempFileService
 
     /**
      * Remove all temp files/dirs for this request so the worker does not run out of space.
-     * Call after callback to CDN (success or failure).
+     * Call after callback to CDN (success or failure). Deletes the whole per-request subdir.
      */
     public function cleanupForRequest(string $externalId): void
     {
-        $dir = $this->tempDir();
-        $prefix = Str::slug($externalId);
-        if ($prefix === '') {
+        $dir = $this->tempDir() . '/' . Str::slug($externalId);
+        if ($dir === '' || ! is_dir($dir)) {
             return;
         }
-        if (! is_dir($dir)) {
-            return;
-        }
-        $items = @scandir($dir);
-        if (! is_array($items)) {
-            return;
-        }
-        foreach ($items as $name) {
-            if ($name === '.' || $name === '..') {
-                continue;
-            }
-            if (str_starts_with($name, $prefix)) {
-                $path = $dir . '/' . $name;
-                if (is_file($path)) {
-                    @unlink($path);
-                } elseif (is_dir($path)) {
-                    $this->removeDirRecursive($path);
-                }
-            }
-        }
+        $this->removeDirRecursive($dir);
     }
 
     private function removeDirRecursive(string $path): void

@@ -3,6 +3,7 @@
 namespace App\Services\Media;
 
 use App\Models\ProcessingRequest;
+use App\Services\Media\RemoteFilenameResolver;
 use App\Services\TempFileService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -14,7 +15,8 @@ class MediaDownloadService
     private const USER_AGENT = 'NaraboxWorker/1.0 (compatible; NaraboxCDNImporter/1.0)';
 
     public function __construct(
-        private readonly TempFileService $tempFileService
+        private readonly TempFileService $tempFileService,
+        private readonly RemoteFilenameResolver $filenameResolver
     ) {}
 
     /**
@@ -32,11 +34,10 @@ class MediaDownloadService
             throw new RuntimeException('Download failed: no source URL.');
         }
 
-        $localPath = $this->tempFileService->pathForRequest($request->external_id, 'source.mp4');
-        $dir = dirname($localPath);
-        if (! is_dir($dir)) {
-            @mkdir($dir, 0755, true);
-        }
+        // Use CDN-style resolution so we never save as .php (e.g. from downloadmp4.php?file=...)
+        $ext = $this->filenameResolver->resolveExtension($url);
+        $sourceSuffix = 'source.' . $ext;
+        $localPath = $this->tempFileService->pathForRequest($request->external_id, $sourceSuffix);
 
         $downloadConfig = config('media_worker.download', []);
         $timeout = max(60, (int) ($downloadConfig['timeout'] ?? 600));

@@ -7,7 +7,7 @@ The worker generates HLS from a source URL (e.g. CDN download URL), validates ou
 ## Current processing flow
 
 1. **Submit** – CDN (or admin) POSTs to `POST /api/v1/processing/submit` with `cdn_asset_id`, `cdn_source_id`, `source_url` (e.g. CDN MP4 download URL), `original_filename`, optional `callback_url` / `portal_sync_hint` / `payload`.
-2. **Download** – Worker fetches `source_url` into temp storage (`source.mp4`) with configurable timeouts and retries (`config/media_worker.download`).
+2. **Download** – Worker fetches `source_url` into temp storage. The local filename uses **CDN-style resolution** (`RemoteFilenameResolver`): extension is taken from query params (e.g. `?file=path/Title.mp4`) so script paths like `downloadmp4.php` never become the file extension. File is saved as `source.{ext}` (e.g. `source.mp4`) under a per-request subdir. Timeouts/retries: `config/media_worker.download`.
 3. **Probe** – FFprobe extracts duration, size, codec, resolution.
 4. **Faststart** – FFmpeg produces `optimized.mp4` with `-movflags +faststart`.
 5. **HLS** – `FfmpegTranscodeService::generateHls()` builds profiles (1080p/720p/480p or source fallback), validates variant playlists and segments, writes `master.m3u8`.
@@ -25,7 +25,8 @@ The worker generates HLS from a source URL (e.g. CDN download URL), validates ou
 - **ProcessMediaPipelineJob** – Orchestrates download → probe → faststart → HLS → zip → artifact → callback.
 - **MediaDownloadService** – HTTP download with retries/timeouts.
 - **FfmpegTranscodeService** – probe, faststart, generateHls (with variant and master validation).
-- **TempFileService** – Per-request temp paths under `config('media_worker.temp_dir')`.
+- **TempFileService** – Per-request subdir under `config('media_worker.temp_dir')`: `{temp_dir}/{external_id}/` holds `source.{ext}`, `optimized.mp4`, `hls/`, `hls.zip`. Avoids "Error writing trailer: No such file or directory" and keeps cleanup simple.
+- **RemoteFilenameResolver** – Resolves video extension (and basename) from URL query/path so we never use `.php` or other non-video extensions (aligned with naraboxtv-cdn).
 
 ## Endpoints
 
