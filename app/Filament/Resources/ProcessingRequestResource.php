@@ -68,7 +68,7 @@ class ProcessingRequestResource extends Resource
                 \Filament\Tables\Actions\Action::make('copy_artifact_url')
                     ->label('Copy artifact URL')
                     ->icon('heroicon-o-link')
-                    ->visible(fn (ProcessingRequest $record): bool => $record->hlsArtifact?->download_token && $record->hlsArtifact?->status === 'artifact_ready')
+                    ->visible(fn (?ProcessingRequest $record): bool => $record !== null && $record->hlsArtifact?->download_token && $record->hlsArtifact?->status === 'artifact_ready')
                     ->action(function (ProcessingRequest $record): void {
                         $base = rtrim(config('app.url'), '/');
                         $token = $record->hlsArtifact?->download_token;
@@ -87,7 +87,7 @@ class ProcessingRequestResource extends Resource
                     ->icon('heroicon-o-arrow-path')
                     ->color('warning')
                     ->requiresConfirmation()
-                    ->visible(fn (ProcessingRequest $record): bool => in_array($record->status, [ProcessingRequestStatus::Failed, ProcessingRequestStatus::Cancelled], true))
+                    ->visible(fn (?ProcessingRequest $record): bool => $record !== null && in_array($record->status, [ProcessingRequestStatus::Failed, ProcessingRequestStatus::Cancelled], true))
                     ->action(function (ProcessingRequest $record): void {
                         $record->update([
                             'status' => ProcessingRequestStatus::Received,
@@ -98,42 +98,11 @@ class ProcessingRequestResource extends Resource
                         ProcessMediaPipelineJob::dispatch($record->fresh());
                         \Filament\Notifications\Notification::make()->title('Retry dispatched')->success()->send();
                     }),
-            ])
-            ->headerActions([
-                \Filament\Tables\Actions\Action::make('create_manual_request')
-                    ->label('New manual request')
-                    ->icon('heroicon-o-plus')
-                    ->form([
-                        \Filament\Forms\Components\TextInput::make('source_url')
-                            ->label('Source URL')
-                            ->required()
-                            ->url()
-                            ->maxLength(2048),
-                        \Filament\Forms\Components\TextInput::make('original_filename')
-                            ->label('Original filename')
-                            ->maxLength(512),
-                    ])
-                    ->action(function (array $data): void {
-                        $request = ProcessingRequest::create([
-                            'cdn_asset_id' => null,
-                            'cdn_source_id' => null,
-                            'source_url' => $data['source_url'],
-                            'original_filename' => $data['original_filename'] ?? null,
-                            'status' => ProcessingRequestStatus::Received,
-                            'payload' => null,
-                            'artifact_paths' => [],
-                        ]);
-                        ProcessMediaPipelineJob::dispatch($request);
-                        \Filament\Notifications\Notification::make()
-                            ->title('Manual request queued')
-                            ->success()
-                            ->send();
-                    }),
                 \Filament\Tables\Actions\Action::make('cleanup_artifact')
                     ->label('Cleanup artifact')
                     ->icon('heroicon-o-trash')
                     ->requiresConfirmation()
-                    ->visible(fn (ProcessingRequest $record): bool => $record->hlsArtifact !== null)
+                    ->visible(fn (?ProcessingRequest $record): bool => $record !== null && $record->hlsArtifact !== null)
                     ->action(function (ProcessingRequest $record): void {
                         $artifact = $record->hlsArtifact;
                         if (! $artifact) {
@@ -170,6 +139,37 @@ class ProcessingRequestResource extends Resource
                         ]);
                         \Filament\Notifications\Notification::make()
                             ->title('Artifact cleaned up')
+                            ->success()
+                            ->send();
+                    }),
+            ])
+            ->headerActions([
+                \Filament\Tables\Actions\Action::make('create_manual_request')
+                    ->label('New manual request')
+                    ->icon('heroicon-o-plus')
+                    ->form([
+                        \Filament\Forms\Components\TextInput::make('source_url')
+                            ->label('Source URL')
+                            ->required()
+                            ->url()
+                            ->maxLength(2048),
+                        \Filament\Forms\Components\TextInput::make('original_filename')
+                            ->label('Original filename')
+                            ->maxLength(512),
+                    ])
+                    ->action(function (array $data): void {
+                        $request = ProcessingRequest::create([
+                            'cdn_asset_id' => null,
+                            'cdn_source_id' => null,
+                            'source_url' => $data['source_url'],
+                            'original_filename' => $data['original_filename'] ?? null,
+                            'status' => ProcessingRequestStatus::Received,
+                            'payload' => null,
+                            'artifact_paths' => [],
+                        ]);
+                        ProcessMediaPipelineJob::dispatch($request);
+                        \Filament\Notifications\Notification::make()
+                            ->title('Manual request queued')
                             ->success()
                             ->send();
                     }),
