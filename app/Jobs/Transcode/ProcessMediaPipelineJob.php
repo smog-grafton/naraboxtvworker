@@ -50,6 +50,13 @@ class ProcessMediaPipelineJob implements ShouldQueue
         ]);
 
         try {
+            // Ensure temp base + per-request dir exist before any step (avoids "Error writing trailer: No such file or directory")
+            $requestDir = $tempFileService->requestDir($request->external_id);
+            if (! is_dir($requestDir) || ! is_writable($requestDir)) {
+                $this->failRequest($request, 'Temp dir not writable: ' . $requestDir . '. Set WORKER_TEMP_DIR in Coolify (e.g. /tmp/worker-temp).', $cdnApi);
+                return;
+            }
+
             $downloadedPath = $downloadService->download($request);
 
             $request->update(['status' => ProcessingRequestStatus::Probing]);
