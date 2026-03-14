@@ -15,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use ZipArchive;
 
@@ -41,6 +42,14 @@ class ProcessMediaPipelineJob implements ShouldQueue
     ): void {
         $request = $this->processingRequest->fresh();
         if (! $request || $request->isFinished()) {
+            return;
+        }
+
+        // Only one pipeline job per request at a time (avoids cleanup deleting temp dir while FFmpeg is writing)
+        $lockKey = 'process_media_pipeline:' . $request->id;
+        $lock = Cache::lock($lockKey, $this->timeout);
+        if (! $lock->get()) {
+            $this->release(120);
             return;
         }
 
@@ -178,6 +187,7 @@ class ProcessMediaPipelineJob implements ShouldQueue
             ]);
             $this->failRequest($request, strlen($reason) > 1024 ? substr($reason, 0, 1021) . '...' : $reason, $cdnApi);
         } finally {
+            $lock->release();
             $req = $this->processingRequest->fresh();
             if ($req) {
                 $downloadService->cleanup($req);

@@ -94,6 +94,7 @@ class FfmpegTranscodeService
             $outputPath,
         ]);
         $process->setTimeout(600);
+        $process->setWorkingDirectory($dir);
         $process->run();
 
         if (! $process->isSuccessful()) {
