@@ -170,8 +170,27 @@ class ProcessMediaPipelineJob implements ShouldQueue
             ];
 
             if ($request->cdn_asset_id && $request->cdn_source_id) {
-                $result = $cdnApi->notifyResult($request->cdn_asset_id, (int) $request->cdn_source_id, $payload);
-                $this->logCallback($request, $cdnApi->baseUrl() . '/api/v1/media/worker/callback', $result);
+                try {
+                    $result = $cdnApi->notifyResult($request->cdn_asset_id, (int) $request->cdn_source_id, $payload);
+                    $this->logCallback($request, $cdnApi->baseUrl() . '/api/v1/media/worker/callback', $result);
+                    if (! ($result['success'] ?? false)) {
+                        Log::warning('ProcessMediaPipelineJob: CDN callback returned non-success', [
+                            'request_id' => $request->id,
+                            'response_code' => $result['response_code'] ?? null,
+                        ]);
+                    }
+                } catch (\Throwable $callbackError) {
+                    Log::error('ProcessMediaPipelineJob: CDN callback failed (artifact is ready)', [
+                        'request_id' => $request->id,
+                        'message' => $callbackError->getMessage(),
+                    ]);
+                    $this->logCallback($request, $cdnApi->baseUrl() . '/api/v1/media/worker/callback', [
+                        'success' => false,
+                        'response_code' => null,
+                        'body' => ['error' => $callbackError->getMessage()],
+                    ]);
+                    // Still mark completed so the artifact remains available; CDN can fetch manually
+                }
             }
 
             $request->update([

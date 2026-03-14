@@ -222,8 +222,31 @@ class FfmpegTranscodeService
         }
 
         if ($generated === []) {
-            $this->lastError = 'No HLS variants generated (check FFmpeg logs).';
-            Log::warning('FfmpegTranscodeService: no HLS variants generated');
+            $fallback360Dir = $hlsDir . '/360p';
+            @mkdir($fallback360Dir, 0755, true);
+            $fallback360Playlist = $fallback360Dir . '/index.m3u8';
+            $fallback360Segment = $fallback360Dir . '/segment_%05d.ts';
+            if (
+                $this->runHlsVariant($ffmpeg, $inputPath, $fallback360Playlist, $fallback360Segment, 360, '96k', $hasAudio)
+                && is_file($fallback360Playlist)
+                && $this->validateVariantPlaylist($fallback360Playlist)
+            ) {
+                $generated[] = [
+                    'id' => '360p',
+                    'label' => '360P',
+                    'height' => 360,
+                    'width' => 640,
+                    'bandwidth' => 600000,
+                    'path' => '360p/index.m3u8',
+                ];
+            }
+        }
+
+        if ($generated === []) {
+            if ($this->lastError === null || $this->lastError === '') {
+                $this->lastError = 'No HLS variants generated (check FFmpeg logs).';
+            }
+            Log::warning('FfmpegTranscodeService: no HLS variants generated', ['last_error' => $this->lastError]);
             return ['qualities_json' => [], 'success' => false];
         }
         $this->lastError = null;

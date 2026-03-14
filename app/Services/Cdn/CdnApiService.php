@@ -27,10 +27,15 @@ class CdnApiService
             Log::warning('CdnApiService: base URL or token not set');
             return ['success' => false, 'response_code' => 0, 'body' => null];
         }
-        $response = Http::withToken($token)->timeout(30)->post($url, array_merge(
-            ['asset_id' => $assetId, 'source_id' => $sourceId],
-            $payload
-        ));
+        $timeout = max(15, (int) config('media_worker.cdn.callback_timeout', 90));
+        $connectTimeout = max(5, (int) config('media_worker.cdn.callback_connect_timeout', 15));
+        $response = Http::withToken($token)
+            ->connectTimeout($connectTimeout)
+            ->timeout($timeout)
+            ->post($url, array_merge(
+                ['asset_id' => $assetId, 'source_id' => $sourceId],
+                $payload
+            ));
         return [
             'success' => $response->successful(),
             'response_code' => $response->status(),

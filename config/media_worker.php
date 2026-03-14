@@ -33,6 +33,8 @@ return [
     'cdn' => [
         'api_base_url' => rtrim(env('CDN_API_BASE_URL', 'https://cdn.naraboxtv.com'), '/'),
         'api_token' => env('CDN_API_TOKEN', ''),
+        'callback_timeout' => (int) env('CDN_CALLBACK_TIMEOUT', 90),
+        'callback_connect_timeout' => (int) env('CDN_CALLBACK_CONNECT_TIMEOUT', 15),
     ],
 
     'artifacts' => [

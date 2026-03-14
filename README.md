@@ -319,8 +319,15 @@ See `.env.example`. Summary:
 
 ---
 
+## Artifact URL and CDN fetch
+
+The artifact download URL (e.g. `{APP_URL}/api/v1/artifacts/{token}`) **requires** `Authorization: Bearer {WORKER_API_TOKEN}`. Opening it in a browser returns `{"success":false,"error":"Missing or invalid API token."}` — that is expected. The **CDN** fetches the ZIP using the same token (`CDN_LARAVEL_WORKER_API_TOKEN` = worker’s `WORKER_API_TOKEN`). Manual requests (from worker UI) have no `cdn_asset_id`/`cdn_source_id`, so the worker does not call the CDN callback; to test the full flow, submit a job from the CDN. See [docs/ARTIFACT_URL_AND_CDN_FETCH.md](docs/ARTIFACT_URL_AND_CDN_FETCH.md).
+
+---
+
 ## Further reading
 
+- [docs/ARTIFACT_URL_AND_CDN_FETCH.md](docs/ARTIFACT_URL_AND_CDN_FETCH.md) — Artifact URL auth and CDN fetch setup.
 - [docs/INTEGRATION_PLAN.md](docs/INTEGRATION_PLAN.md) — Worker, CDN, Portal architecture and phases.
 - [Laravel Horizon](https://laravel.com/docs/horizon)
 - [Filament](https://filamentphp.com/docs)
