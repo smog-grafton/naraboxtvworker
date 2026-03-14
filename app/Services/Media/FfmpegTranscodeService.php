@@ -35,7 +35,7 @@ class FfmpegTranscodeService
         $process->run();
 
         if (! $process->isSuccessful()) {
-            $this->lastError = $process->getErrorOutput() ?: 'Probe failed (exit ' . $process->getExitCode() . ')';
+            $this->lastError = $this->tailStderr($process->getErrorOutput()) ?: 'Probe failed (exit ' . $process->getExitCode() . ')';
             Log::warning('FfmpegTranscodeService: probe failed', [
                 'path' => $localPath,
                 'exit_code' => $process->getExitCode(),
@@ -96,7 +96,7 @@ class FfmpegTranscodeService
         $process->run();
 
         if (! $process->isSuccessful()) {
-            $this->lastError = $process->getErrorOutput() ?: 'Faststart failed (exit ' . $process->getExitCode() . ')';
+            $this->lastError = $this->tailStderr($process->getErrorOutput()) ?: 'Faststart failed (exit ' . $process->getExitCode() . ')';
             Log::warning('FfmpegTranscodeService: faststart failed', [
                 'input' => $inputPath,
                 'output' => $outputPath,
@@ -262,6 +262,48 @@ class FfmpegTranscodeService
         ];
     }
 
+    /**
+     * Extract the useful part of FFmpeg/ffprobe stderr (real error at the end; banner at the start).
+     */
+    private function tailStderr(?string $stderr): string
+    {
+        if (! is_string($stderr) || trim($stderr) === '') {
+            return '';
+        }
+        $lines = preg_split('/\r\n|\r|\n/', $stderr) ?: [];
+        $skipPatterns = [
+            '/^ffmpeg version/i',
+            '/^ffprobe version/i',
+            '/^built with /i',
+            '/^configuration:/i',
+            '/^\s*--/',
+            '/^libav/i',
+            '/copyright/i',
+        ];
+        $meaningful = [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $skip = false;
+            foreach ($skipPatterns as $p) {
+                if (preg_match($p, $line)) {
+                    $skip = true;
+                    break;
+                }
+            }
+            if (! $skip) {
+                $meaningful[] = $line;
+            }
+        }
+        if ($meaningful === []) {
+            return trim(substr($stderr, -600));
+        }
+        $tail = array_slice($meaningful, -15);
+        return implode(' ', $tail);
+    }
+
     private function probeHeight(string $ffprobe, string $inputPath): ?int
     {
         $process = new Process([
@@ -360,6 +402,7 @@ class FfmpegTranscodeService
         $process->run();
 
         if (! $process->isSuccessful()) {
+            $this->lastError = $this->tailStderr($process->getErrorOutput()) ?: 'HLS variant failed (exit ' . $process->getExitCode() . ')';
             Log::warning('FfmpegTranscodeService: HLS variant ffmpeg failed', [
                 'height' => $height,
                 'error' => $process->getErrorOutput(),
